@@ -42,7 +42,10 @@ export async function configure(project: string, settings: Record<string, unknow
 export interface RunningServer {
   baseUrl: string;
   process: ChildProcess;
+  /** stdout and stderr interleaved. */
   output: () => string;
+  stdout: () => string;
+  stderr: () => string;
   stop: () => Promise<void>;
 }
 
@@ -71,8 +74,16 @@ export async function startServer(
     stdio: ["ignore", "pipe", "pipe"],
   });
   let output = "";
-  child.stdout.on("data", (d) => (output += d));
-  child.stderr.on("data", (d) => (output += d));
+  let stdout = "";
+  let stderr = "";
+  child.stdout.on("data", (d) => {
+    output += d;
+    stdout += d;
+  });
+  child.stderr.on("data", (d) => {
+    output += d;
+    stderr += d;
+  });
 
   const baseUrl = await new Promise<string>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`server did not start:\n${output}`)), timeoutMs);
@@ -94,6 +105,8 @@ export async function startServer(
     baseUrl,
     process: child,
     output: () => output,
+    stdout: () => stdout,
+    stderr: () => stderr,
     stop: () =>
       new Promise((resolve) => {
         if (child.exitCode !== null) return resolve();
@@ -117,4 +130,29 @@ export function runCli(
     timeout: 120_000,
   });
   return { status: result.status, stdout: result.stdout, stderr: result.stderr };
+}
+
+/**
+ * runCli without blocking the test process, for commands that call back into it (e.g. download
+ * from a fake Maven repository served by the test itself).
+ */
+export function runCliAsync(
+  cwd: string,
+  args: string[],
+  { input = "", env = {} }: { input?: string; env?: Record<string, string> } = {},
+): Promise<{ status: number | null; stdout: string; stderr: string }> {
+  const child = spawn(process.execPath, [bin, ...args], {
+    cwd,
+    env: { ...process.env, FTL_PREVIEW_CACHE_DIR: testCacheDir, ...env },
+    timeout: 120_000,
+  });
+  let stdout = "";
+  let stderr = "";
+  child.stdout.on("data", (d) => (stdout += d));
+  child.stderr.on("data", (d) => (stderr += d));
+  child.stdin.end(input);
+  return new Promise((resolve, reject) => {
+    child.once("error", reject);
+    child.once("close", (status) => resolve({ status, stdout, stderr }));
+  });
 }

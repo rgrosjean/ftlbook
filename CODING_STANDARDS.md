@@ -19,7 +19,7 @@ Keycloak or a literal worked example, not from recomputing what the code does.
 ## Reuse before writing
 
 - Test setup shared by two or more test files lives in `test/harness.ts` (`startServer`,
-  `runCli`, `copyProject`, `configure`, `tempDir`) or `test/maven-repository.ts`
+  `runCli`, `runCliAsync`, `copyProject`, `configure`, `tempDir`) or `test/maven-repository.ts`
   (`startFakeKeycloakRepository`, `zip`). Extend those rather than copying a helper.
 - Use the exported constants and helpers for domain values: `DEFAULT_STORY`, `storyUrl`,
   `setOwn` (for keys from JSON input), `CONFIG_FILE`, `CONFIG_KEYS`. A literal that

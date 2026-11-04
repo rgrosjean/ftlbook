@@ -26,6 +26,9 @@ Commands:
 
 Config: optional ${CONFIG_FILE} at the project root, with the keys ${CONFIG_KEYS.join(", ")}.`;
 
+/** Progress goes to stderr, so stdout carries only a command's result. */
+const progress = (msg: string) => console.error(msg);
+
 async function main(argv: string[]) {
   const [command, ...rest] = argv;
   if (command === "serve") return serve(rest);
@@ -45,8 +48,7 @@ async function serve(args: string[]) {
   // Java runs the Renderer and unpacks the Base theme jars
   await checkJava();
 
-  const log = (msg: string) => console.log(msg);
-  const baseThemesDir = await ensureBaseThemes(config.keycloakVersion, config.mavenRepository, log);
+  const baseThemesDir = await ensureBaseThemes(config.keycloakVersion, config.mavenRepository, progress);
 
   const mockModels = await selectMockModels(config.keycloakVersion);
   if (mockModels.warning) console.warn(mockModels.warning);
@@ -77,7 +79,7 @@ async function addStory(args: string[]) {
   const { values } = parseArgs({ args, options: { page: { type: "string", multiple: true }, story: { type: "string" } } });
   const config = await loadConfig(process.cwd());
   await checkJava();
-  const baseThemesDir = await ensureBaseThemes(config.keycloakVersion, config.mavenRepository, (msg) => console.log(msg));
+  const baseThemesDir = await ensureBaseThemes(config.keycloakVersion, config.mavenRepository, progress);
   const themePages = await listPages(await resolveThemeChain(config.themeDir, baseThemesDir, config.themeType));
   const mockModels = await selectMockModels(config.keycloakVersion);
   if (mockModels.warning) console.warn(mockModels.warning);
