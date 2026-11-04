@@ -1,7 +1,8 @@
 import http from "node:http";
 import type { Project } from "./project.ts";
 import type { RendererProcess } from "./renderer-process.ts";
-import { applyOverrides, StoryFileError } from "./stories.ts";
+import { StoryFileError } from "./stories.ts";
+import { renderStory } from "./render-story.ts";
 import { errorOverlay } from "./error-overlay.ts";
 import { previewUi } from "./preview-ui.ts";
 
@@ -60,41 +61,29 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, optio
   } catch {
     return send(res, 400, "text/plain; charset=utf-8", "Malformed URL");
   }
-  if (themeType !== options.project.themeType) return send(res, 404, "text/plain; charset=utf-8", `Unsupported Theme type: ${themeType} (this Project previews ${options.project.themeType})`);
 
-  const defaults = await options.project.mockModels.defaultFor(page);
-  if (!defaults) return send(res, 404, "text/plain; charset=utf-8", `No default Mock model for Page: ${page}`);
-
-  let story;
-  try {
-    // Story files are read on every request, so edits show on the next reload
-    story = await options.project.findStory(page, storyName);
-  } catch (err) {
-    if (err instanceof StoryFileError) {
-      return send(res, 500, "text/html; charset=utf-8", await errorOverlay("Invalid Story file", { message: err.message }));
-    }
-    throw err;
-  }
-  if (!story) return send(res, 404, "text/plain; charset=utf-8", `Unknown Story: ${page}/${storyName}`);
-
-  const model = applyOverrides(defaults, story.model);
-
-  // Resolved per request, so theme.properties edits show on the next reload
-  const chain = await options.project.themeChain();
-  const result = await options.renderer.render({
-    themes: chain.dirs,
+  const outcome = await renderStory(options.project, options.renderer, {
+    themeType,
     page,
-    // ?locale= (the preview UI's locale selector) overrides the Story's locale
-    locale: url.searchParams.get("locale") || story.locale || "en",
-    model,
+    storyName,
+    locale: url.searchParams.get("locale") ?? undefined,
     strict: options.strict,
   });
-  if (result.ok) {
-    for (const warning of result.warnings) console.warn(`[lenient] ${page}/${story.name}: skipped missing Mock model value\n${warning}\n`);
-    return send(res, 200, "text/html; charset=utf-8", result.html);
+  switch (outcome.kind) {
+    case "unsupported-theme-type":
+      return send(res, 404, "text/plain; charset=utf-8", `Unsupported Theme type: ${outcome.themeType} (this Project previews ${outcome.supported})`);
+    case "no-default-mock-model":
+      return send(res, 404, "text/plain; charset=utf-8", `No default Mock model for Page: ${outcome.page}`);
+    case "invalid-story-file":
+      return send(res, 500, "text/html; charset=utf-8", await errorOverlay("Invalid Story file", { message: outcome.message }));
+    case "unknown-story":
+      return send(res, 404, "text/plain; charset=utf-8", `Unknown Story: ${outcome.page}/${outcome.storyName}`);
+    case "render-failed":
+      return send(res, 500, "text/html; charset=utf-8", await errorOverlay("Render failed", outcome.error));
+    case "ok":
+      for (const warning of outcome.warnings) console.warn(`[lenient] ${page}/${storyName}: skipped missing Mock model value\n${warning}\n`);
+      return send(res, 200, "text/html; charset=utf-8", outcome.html);
   }
-
-  send(res, 500, "text/html; charset=utf-8", await errorOverlay("Render failed", result.error));
 }
 
 /** The UI page; problems with Story files or the Theme are shown in its sidebar rather than failing it. */
