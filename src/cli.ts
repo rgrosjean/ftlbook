@@ -3,7 +3,6 @@ import { ensureBaseThemes } from "./keycloak-themes.ts";
 import { startRenderer } from "./renderer-process.ts";
 import { startPreviewServer } from "./preview-server.ts";
 import { CONFIG_FILE, CONFIG_KEYS, loadConfig } from "./config.ts";
-import { checkJava } from "./environment.ts";
 import { defaultMockModel, pagesWithDefaults, selectMockModels } from "./mock-models.ts";
 import { resolveThemeChain } from "./theme-chain.ts";
 import { addStories, listPages, type ThemePage } from "./scaffold.ts";
@@ -45,9 +44,6 @@ async function serve(args: string[]) {
   }
   const config = await loadConfig(process.cwd());
 
-  // Java runs the Renderer and unpacks the Base theme jars
-  await checkJava();
-
   const baseThemesDir = await ensureBaseThemes(config.keycloakVersion, config.mavenRepository, progress);
 
   const mockModels = await selectMockModels(config.keycloakVersion);
@@ -78,7 +74,6 @@ async function serve(args: string[]) {
 async function addStory(args: string[]) {
   const { values } = parseArgs({ args, options: { page: { type: "string", multiple: true }, story: { type: "string" } } });
   const config = await loadConfig(process.cwd());
-  await checkJava();
   const baseThemesDir = await ensureBaseThemes(config.keycloakVersion, config.mavenRepository, progress);
   const themePages = await listPages(await resolveThemeChain(config.themeDir, baseThemesDir, config.themeType));
   const mockModels = await selectMockModels(config.keycloakVersion);

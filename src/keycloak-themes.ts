@@ -3,13 +3,9 @@ import { mkdir, rename, rm, stat } from "node:fs/promises";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { ReadableStream as WebReadableStream } from "node:stream/web";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import os from "node:os";
 import path from "node:path";
-import { RENDERER_JAR } from "./renderer-process.ts";
-
-const execFileAsync = promisify(execFile);
+import { extractJar, requireJava } from "./java.ts";
 
 /** Keycloak version used when the project does not pin one. */
 export const DEFAULT_KEYCLOAK_VERSION = "26.8.1";
@@ -74,6 +70,9 @@ export async function ensureBaseThemes(
   repository: string | undefined,
   log: (msg: string) => void,
 ): Promise<string> {
+  // A command needing the Base themes needs Java (to extract them, or to render): fail first, before
+  // any download, and also when they are already cached, so a missing JDK shows up straight away
+  await requireJava();
   const dir = path.join(cacheDir(), "keycloak", version, "base-themes");
   if (await isDirectory(dir)) return dir;
 
@@ -83,13 +82,7 @@ export async function ensureBaseThemes(
   const partial = `${dir}.${process.pid}.part`;
   try {
     // Both jars unpack into one tree; their paths do not overlap (vendor assets live under */resources/vendor)
-    for (const jar of jars) {
-      try {
-        await execFileAsync("java", ["-cp", RENDERER_JAR, "ftlpreview.ExtractJar", jar, partial]);
-      } catch (err) {
-        throw new Error(`Could not extract ${jar}: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    }
+    for (const jar of jars) await extractJar(jar, partial);
     await rename(partial, dir);
   } catch (err) {
     await rm(partial, { recursive: true, force: true });

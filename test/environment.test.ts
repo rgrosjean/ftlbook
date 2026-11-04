@@ -4,7 +4,8 @@ import { spawnSync } from "node:child_process";
 import { chmod, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { startServer, fixture, bin } from "./harness.ts";
+import { existsSync } from "node:fs";
+import { startServer, runCli, copyProject, fixture, bin } from "./harness.ts";
 
 /** A directory to use as PATH, holding only the given executables (shell scripts). */
 async function pathWith(t: { after: (fn: () => Promise<void>) => void }, scripts: Record<string, string>) {
@@ -23,6 +24,18 @@ test("without Java on the PATH, serve fails naming the JDK requirement", async (
     startServer(fixture("empty-project"), { env: { PATH: emptyPath } }),
     /server exited with 1:[\s\S]*Java was not found on the PATH\. FTL Preview needs a JDK 21 or newer/,
   );
+});
+
+test("without Java on the PATH, add-story fails naming the JDK requirement, even with the Base theme cached", async (t) => {
+  // Fill the shared cache, so no download or extraction needs Java
+  await (await startServer(fixture("empty-project"))).stop();
+  const project = await copyProject(t, "empty-project");
+  const emptyPath = await pathWith(t, {});
+
+  const result = runCli(project, ["add-story", "--page", "login.ftl"], { env: { PATH: emptyPath } });
+  assert.equal(result.status, 1, result.stdout);
+  assert.match(result.stderr, /Java was not found on the PATH\. FTL Preview needs a JDK 21 or newer/);
+  assert.equal(existsSync(path.join(project, "stories")), false, "no Story file may be written");
 });
 
 test("with a too old Java on the PATH, serve fails naming the found and required versions", async (t) => {
