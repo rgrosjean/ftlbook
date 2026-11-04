@@ -3,7 +3,7 @@ import { ensureBaseThemes } from "./keycloak-themes.ts";
 import { startRenderer } from "./renderer-process.ts";
 import { startPreviewServer } from "./preview-server.ts";
 import { CONFIG_FILE, CONFIG_KEYS, loadConfig } from "./config.ts";
-import { defaultMockModel, pagesWithDefaults, selectMockModels } from "./mock-models.ts";
+import { mockModelCatalog } from "./mock-models.ts";
 import { resolveThemeChain } from "./theme-chain.ts";
 import { addStories, listPages, type ThemePage } from "./scaffold.ts";
 import { DEFAULT_STORY, storyUrl } from "./stories.ts";
@@ -46,7 +46,7 @@ async function serve(args: string[]) {
 
   const baseThemesDir = await ensureBaseThemes(config.keycloakVersion, config.mavenRepository, progress);
 
-  const mockModels = await selectMockModels(config.keycloakVersion);
+  const mockModels = await mockModelCatalog(config.keycloakVersion, config.themeType);
   if (mockModels.warning) console.warn(mockModels.warning);
 
   const renderer = await startRenderer();
@@ -56,7 +56,7 @@ async function serve(args: string[]) {
     baseThemesDir,
     storiesDir: config.storiesDir,
     strict: config.strict && !values.lenient,
-    mockModelsMajor: mockModels.major,
+    mockModels,
     port: values.port === undefined ? config.port : Number(values.port),
   });
 
@@ -76,9 +76,9 @@ async function addStory(args: string[]) {
   const config = await loadConfig(process.cwd());
   const baseThemesDir = await ensureBaseThemes(config.keycloakVersion, config.mavenRepository, progress);
   const themePages = await listPages(await resolveThemeChain(config.themeDir, baseThemesDir, config.themeType));
-  const mockModels = await selectMockModels(config.keycloakVersion);
+  const mockModels = await mockModelCatalog(config.keycloakVersion, config.themeType);
   if (mockModels.warning) console.warn(mockModels.warning);
-  const withDefaults = new Set(await pagesWithDefaults(mockModels.major, config.themeType));
+  const withDefaults = new Set(await mockModels.pages());
 
   let pages = values.page ?? [];
   let name = values.story;
@@ -136,13 +136,13 @@ async function model(args: string[]) {
   if (positionals.length !== 1) throw new Error(`Usage: ftl-preview model <page>, e.g. ftl-preview model login.ftl`);
   const [page] = positionals;
   const config = await loadConfig(process.cwd());
-  const mockModels = await selectMockModels(config.keycloakVersion);
+  const mockModels = await mockModelCatalog(config.keycloakVersion, config.themeType);
   // stdout carries only the JSON, so it can be piped
   if (mockModels.warning) console.warn(mockModels.warning);
 
-  const defaults = await defaultMockModel(mockModels.major, config.themeType, page);
+  const defaults = await mockModels.defaultFor(page);
   if (!defaults) {
-    const pages = await pagesWithDefaults(mockModels.major, config.themeType);
+    const pages = await mockModels.pages();
     throw new Error(`No default Mock model for ${page}. Pages with one: ${pages.join(", ")}`);
   }
   console.log(JSON.stringify(defaults, null, 2));

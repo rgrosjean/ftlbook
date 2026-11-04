@@ -1,5 +1,5 @@
 import http from "node:http";
-import { defaultMockModel } from "./mock-models.ts";
+import type { MockModelCatalog } from "./mock-models.ts";
 import type { RendererProcess } from "./renderer-process.ts";
 import { resolveThemeChain, themeLocales } from "./theme-chain.ts";
 import { findResource } from "./resources.ts";
@@ -18,8 +18,8 @@ export interface PreviewServerOptions {
   storiesDir: string;
   /** Strict mode (default): a missing Mock model value fails the render. Lenient: the failing part is skipped. */
   strict: boolean;
-  /** Keycloak major whose default Mock models are used (see selectMockModels). */
-  mockModelsMajor: number;
+  /** Default Mock models of the configured Theme type, which can only be login so far (see config). */
+  mockModels: MockModelCatalog;
   port: number;
 }
 
@@ -66,7 +66,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, optio
   }
   if (themeType !== "login") return send(res, 404, "text/plain; charset=utf-8", `Unsupported Theme type: ${themeType}`);
 
-  const defaults = await defaultMockModel(options.mockModelsMajor, themeType, page);
+  const defaults = await options.mockModels.defaultFor(page);
   if (!defaults) return send(res, 404, "text/plain; charset=utf-8", `No default Mock model for Page: ${page}`);
 
   let story;

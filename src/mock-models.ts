@@ -9,15 +9,17 @@ import type { JsonObject } from "./stories.ts";
  */
 const MOCK_MODELS_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "mock-models");
 
-/** The default Mock models chosen for a pinned Keycloak version. */
-export interface MockModelSelection {
-  /** Keycloak major whose defaults are used. */
-  major: number;
+/** The default Mock models of one Theme type, chosen for the pinned Keycloak version. */
+export interface MockModelCatalog {
   /**
    * Set when the defaults were not taken from the pinned Keycloak minor: another minor of the same
    * major, or the nearest supported major when the pinned major has none.
    */
   warning?: string;
+  /** The default Mock model of a Page, or undefined when the tool ships none. */
+  defaultFor(page: string): Promise<JsonObject | undefined>;
+  /** Pages the tool ships a default Mock model for, sorted. */
+  pages(): Promise<string[]>;
 }
 
 /**
@@ -25,7 +27,7 @@ export interface MockModelSelection {
  * else the nearest supported major's (the newer one on a tie). Warns unless the defaults were
  * taken from the pinned major and minor; patch releases share defaults.
  */
-export async function selectMockModels(keycloakVersion: string): Promise<MockModelSelection> {
+export async function mockModelCatalog(keycloakVersion: string, themeType: string): Promise<MockModelCatalog> {
   const [requestedMajor, requestedMinor] = keycloakVersion.split(/[.-]/).map((part) => Number.parseInt(part, 10));
   const supported = (await readdir(MOCK_MODELS_DIR, { withFileTypes: true }))
     .filter((entry) => entry.isDirectory() && /^\d+$/.test(entry.name))
@@ -39,12 +41,28 @@ export async function selectMockModels(keycloakVersion: string): Promise<MockMod
   });
   const source = await sourceVersion(major);
   const [sourceMajor, sourceMinor] = source.split(".").map(Number);
-  if (sourceMajor === requestedMajor && sourceMinor === requestedMinor) return { major };
+  const warning =
+    sourceMajor === requestedMajor && sourceMinor === requestedMinor
+      ? undefined
+      : `Warning: no default Mock models for Keycloak ${keycloakVersion}; using those taken from Keycloak ${source}. ` +
+        `Fields may differ from what Keycloak ${keycloakVersion} provides.`;
+
+  const dir = path.join(MOCK_MODELS_DIR, String(major), themeType);
   return {
-    major,
-    warning:
-      `Warning: no default Mock models for Keycloak ${keycloakVersion}; using those taken from Keycloak ${source}. ` +
-      `Fields may differ from what Keycloak ${keycloakVersion} provides.`,
+    warning,
+    async defaultFor(page) {
+      if (!/^[\w.-]+\.ftl$/.test(page)) return undefined;
+      try {
+        return JSON.parse(await readFile(path.join(dir, `${page}.json`), "utf8"));
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+        throw err;
+      }
+    },
+    async pages() {
+      const files = await readdir(dir);
+      return files.filter((f) => f.endsWith(".ftl.json")).map((f) => f.replace(/\.json$/, "")).sort();
+    },
   };
 }
 
@@ -54,21 +72,4 @@ async function sourceVersion(major: number): Promise<string> {
   const { keycloakVersion } = JSON.parse(await readFile(file, "utf8")) as { keycloakVersion?: unknown };
   if (typeof keycloakVersion !== "string") throw new Error(`${file}: "keycloakVersion" is missing`);
   return keycloakVersion;
-}
-
-/** The default Mock model for a Page, or undefined when the tool ships none. */
-export async function defaultMockModel(major: number, themeType: string, page: string): Promise<JsonObject | undefined> {
-  if (!/^[\w.-]+\.ftl$/.test(page)) return undefined;
-  try {
-    return JSON.parse(await readFile(path.join(MOCK_MODELS_DIR, String(major), themeType, `${page}.json`), "utf8"));
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-    throw err;
-  }
-}
-
-/** Pages the tool ships a default Mock model for, sorted. */
-export async function pagesWithDefaults(major: number, themeType: string): Promise<string[]> {
-  const files = await readdir(path.join(MOCK_MODELS_DIR, String(major), themeType));
-  return files.filter((f) => f.endsWith(".ftl.json")).map((f) => f.replace(/\.json$/, "")).sort();
 }
