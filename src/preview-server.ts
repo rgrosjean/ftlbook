@@ -2,6 +2,8 @@ import http from "node:http";
 import { defaultMockModel } from "./mock-models.ts";
 import type { RendererProcess } from "./renderer-process.ts";
 import { resolveThemeChain } from "./theme-chain.ts";
+import { findResource } from "./resources.ts";
+import path from "node:path";
 
 export interface PreviewServerOptions {
   renderer: RendererProcess;
@@ -13,6 +15,8 @@ export interface PreviewServerOptions {
 }
 
 const PREVIEW_ROUTE = /^\/preview\/([^/]+)\/([^/]+)\/([^/]+)$/;
+/** Mirrors Keycloak's url.resourcesPath (/resources/login/<theme>) and url.resourcesCommonPath (/resources/common/<theme>). */
+const RESOURCES_ROUTE = /^\/resources\/(login|common)\/([\w.-]+)\/(.+)$/;
 
 /** Dev server: renders each Story fresh on every request (no caching in dev). */
 export async function startPreviewServer(options: PreviewServerOptions): Promise<{ url: string; close(): Promise<void> }> {
@@ -37,8 +41,11 @@ export async function startPreviewServer(options: PreviewServerOptions): Promise
 
 async function handle(req: http.IncomingMessage, res: http.ServerResponse, options: PreviewServerOptions) {
   const url = new URL(req.url ?? "/", "http://localhost");
+  if (req.method !== "GET") return send(res, 404, "text/plain; charset=utf-8", "Not found");
+  const resource = RESOURCES_ROUTE.exec(url.pathname);
+  if (resource) return serveResource(res, options, resource[1] as "login" | "common", resource[2], resource[3]);
   const match = PREVIEW_ROUTE.exec(url.pathname);
-  if (req.method !== "GET" || !match) return send(res, 404, "text/plain; charset=utf-8", "Not found");
+  if (!match) return send(res, 404, "text/plain; charset=utf-8", "Not found");
 
   let themeType: string, page: string, story: string;
   try {
@@ -66,6 +73,34 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, optio
   const { message, template, line, column } = result.error;
   const where = template ? `${template}:${line ?? "?"}:${column ?? "?"}\n\n` : "";
   send(res, 500, "text/plain; charset=utf-8", `Render failed\n\n${where}${message}`);
+}
+
+/**
+ * Login resources come from the login Theme chain (the theme name in the URL is cosmetic, as with one
+ * Theme per project); common resources from the Base theme's common type, e.g. keycloak/common.
+ */
+async function serveResource(
+  res: http.ServerResponse,
+  options: PreviewServerOptions,
+  scope: "login" | "common",
+  themeName: string,
+  encodedPath: string,
+) {
+  let resourcePath: string;
+  try {
+    resourcePath = decodeURIComponent(encodedPath);
+  } catch {
+    return send(res, 400, "text/plain; charset=utf-8", "Malformed URL");
+  }
+  if (themeName === "." || themeName === "..") return send(res, 404, "text/plain; charset=utf-8", "Not found");
+  const themes =
+    scope === "login"
+      ? await resolveThemeChain(options.loginThemeDir, options.baseThemesDir, "login")
+      : [path.join(options.baseThemesDir, "theme", themeName, "common")];
+  const found = await findResource(themes, resourcePath);
+  if (!found) return send(res, 404, "text/plain; charset=utf-8", `Resource not found: ${resourcePath}`);
+  res.writeHead(200, { "content-type": found.contentType, "cache-control": "no-store" });
+  res.end(found.body);
 }
 
 function send(res: http.ServerResponse, status: number, contentType: string, body: string) {

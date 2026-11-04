@@ -22,11 +22,15 @@ export interface RunningServer {
 /** Starts `ftl-preview serve` in `cwd`, as a user would, and waits until it reports its URL. */
 export async function startServer(
   cwd: string,
-  { cacheDir = testCacheDir, timeoutMs = 120_000 }: { cacheDir?: string; timeoutMs?: number } = {},
+  {
+    cacheDir = testCacheDir,
+    env = {},
+    timeoutMs = 120_000,
+  }: { cacheDir?: string; env?: Record<string, string>; timeoutMs?: number } = {},
 ): Promise<RunningServer> {
   const child = spawn(process.execPath, [cli, "serve", "--port", "0"], {
     cwd,
-    env: { ...process.env, FTL_PREVIEW_CACHE_DIR: cacheDir },
+    env: { ...process.env, FTL_PREVIEW_CACHE_DIR: cacheDir, ...env },
     stdio: ["ignore", "pipe", "pipe"],
   });
   let output = "";
