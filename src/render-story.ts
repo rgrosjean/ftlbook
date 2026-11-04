@@ -48,6 +48,8 @@ export async function renderStory(project: Project, renderer: RendererProcess, r
   const chain = await project.themeChain();
   const result = await renderer.render({
     themes: chain.dirs,
+    themeType,
+    themeName: chain.themeName,
     page,
     locale: request.locale || story.locale || "en",
     model: applyOverrides(defaults, story.model),

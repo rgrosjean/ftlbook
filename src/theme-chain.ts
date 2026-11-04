@@ -16,6 +16,11 @@ export interface ThemePage {
 export interface ThemeChain {
   /** Theme directories, most specific first, for the Renderer. */
   readonly dirs: string[];
+  /**
+   * The Theme's name as Keycloak would know it: the folder holding the Theme (Keycloak's
+   * themes/<name>/<type> layout), or the fallback Base theme's name when the Project has none.
+   */
+  readonly themeName: string;
   /** Every Page of the chain, sorted by name. */
   pages(): Promise<ThemePage[]>;
   /** A resource below `resources/` of the first Theme in the chain that has it. */
@@ -76,6 +81,7 @@ export async function resolveThemeChain(
   const dirs = chain.map((entry) => entry.dir);
   return {
     dirs,
+    themeName: themeDir ? path.basename(path.dirname(path.resolve(themeDir))) : FALLBACK_LOGIN_BASE_THEME,
     pages: () => listPages(chain),
     findResource: (resourcePath) => findResource(dirs, resourcePath),
     locales: () => themeLocales(dirs),

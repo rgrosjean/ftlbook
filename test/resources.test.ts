@@ -23,6 +23,11 @@ describe("resources of a Theme layered over the Base theme", () => {
     await server?.stop();
   });
 
+  test("links the Theme's resources under the Theme's name, like Keycloak's url.resourcesPath", async () => {
+    // The Theme lives in theme/login, so Keycloak would name it "theme"
+    assert.equal(linkTo(html, "acme.css"), "/resources/login/theme/css/acme.css");
+  });
+
   test("serves a CSS file from the Theme's resources at the URL the Page links to", async () => {
     const res = await fetch(new URL(linkTo(html, "acme.css"), server.baseUrl));
     assert.equal(res.status, 200);
@@ -51,6 +56,16 @@ describe("resources of a Theme layered over the Base theme", () => {
     const escaping = await fetch(`${server.baseUrl}/resources/login/keycloak.v2/..%2Ftheme.properties`);
     assert.equal(escaping.status, 404);
   });
+});
+
+test("without a Theme, the Page links the Base theme's resources and the common resources Keycloak names", async (t) => {
+  const server = await startServer(fixture("empty-project"));
+  t.after(() => server.stop());
+  const html = await (await fetch(`${server.baseUrl}/preview/login/login.ftl/Default`)).text();
+
+  assert.equal(linkTo(html, "favicon.ico"), "/resources/login/keycloak.v2/img/favicon.ico");
+  // keycloak.v2 sets no "common" theme property, so Keycloak falls back to common/keycloak
+  assert.match(html, /"\/resources\/common\/keycloak\/vendor\/rfc4648\/rfc4648\.js"/);
 });
 
 test("a resource changed on disk is served fresh on the next request, without restarting", async (t) => {

@@ -3,6 +3,10 @@ import { REQUIRED_JAVA_MAJOR, spawnRenderer } from "./java.ts";
 export interface RenderRequest {
   /** Theme chain directories, most specific first. */
   themes: string[];
+  /** The Theme type, for the resource URLs. */
+  themeType: string;
+  /** The Theme's name as Keycloak would know it, for the resource URLs. */
+  themeName: string;
   page: string;
   locale: string;
   model: Record<string, unknown>;

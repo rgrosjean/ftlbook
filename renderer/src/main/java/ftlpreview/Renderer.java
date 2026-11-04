@@ -23,6 +23,9 @@ import java.util.Properties;
 /** Renders one Page with real FreeMarker, configured as Keycloak's DefaultFreeMarkerProvider. */
 final class Renderer {
 
+    /** Where the preview server serves Theme resources (Keycloak's theme root URL). */
+    private static final String THEME_ROOT = "/resources";
+
     RenderResult render(RenderRequest request) throws RenderException {
         ThemeChain chain = ThemeChain.of(request.themes());
         Locale locale = Locale.forLanguageTag(request.locale() == null ? "en" : request.locale());
@@ -43,6 +46,7 @@ final class Renderer {
         model.put("pageId", request.page().replaceFirst("\\.ftl$", ""));
         model.putIfAbsent("darkMode", "true".equals(properties.getProperty("darkMode")));
         model.putIfAbsent("title", title(model, msg));
+        model.put("url", urlBean(model.get("url"), request.themeType(), request.themeName(), properties));
 
         List<String> warnings = new ArrayList<>();
         Configuration cfg = configuration(chain, request.isStrict(), warnings);
@@ -86,6 +90,21 @@ final class Renderer {
         });
         cfg.setLogTemplateExceptions(false);
         return cfg;
+    }
+
+    /**
+     * Keycloak's UrlBean: the Mock model's flow URLs plus the resource URLs derived from the Theme, which
+     * replace any mocked value:
+     * resourcesPath is the theme root, type and name; resourcesCommonPath the theme root and the
+     * {@code common} theme property, else common/keycloak. The theme root is the preview server's /resources.
+     */
+    private static Map<String, Object> urlBean(Object mocked, String themeType, String themeName, Properties properties) {
+        Map<String, Object> url = new HashMap<>();
+        if (mocked instanceof Map<?, ?> m) m.forEach((k, v) -> url.put(String.valueOf(k), v));
+        url.put("resourcesPath", THEME_ROOT + "/" + themeType + "/" + themeName);
+        String common = properties.getProperty("common");
+        url.put("resourcesCommonPath", THEME_ROOT + "/" + (common == null || common.isEmpty() ? "common/keycloak" : common));
+        return url;
     }
 
     /** Keycloak: title = msg("loginTitle", realm.displayName). */
