@@ -76,12 +76,11 @@ async function serve(args: string[]) {
 async function addStory(args: string[]) {
   const { values } = parseArgs({ args, options: { page: { type: "string", multiple: true }, story: { type: "string" } } });
   const project = await openProjectInCwd({ setUp: true });
-  const themePages = await (await project.themeChain()).pages();
-  const withDefaults = new Set(await project.mockModels.pages());
-
   let pages = values.page ?? [];
   let name = values.story;
   if (pages.length === 0) {
+    const themePages = await (await project.themeChain()).pages();
+    const withDefaults = new Set(await project.mockModels.pages());
     const answers = stdinPrompts();
     console.log("Pages of the Theme and its Base theme:");
     themePages.forEach((p, i) => console.log(`  ${String(i + 1).padStart(3)}. ${pageLabel(p, withDefaults)}`));
@@ -91,19 +90,15 @@ async function addStory(args: string[]) {
       .map((c) => c.trim())
       .filter(Boolean)
       .map((c) => (/^\d+$/.test(c) ? (themePages[Number(c) - 1]?.page ?? c) : c));
+    // A blank answer takes the default name the prompt shows
     name ??= (await answers.ask(`Story name [${DEFAULT_STORY}]: `)).trim() || undefined;
     answers.close();
   }
-  name = (name ?? DEFAULT_STORY).trim();
-  if (pages.length === 0) throw new Error("No Pages chosen");
-  if (name === "") throw new Error("The Story name must not be empty");
-  const unknown = pages.filter((page) => !themePages.some((p) => p.page === page));
-  if (unknown.length > 0) throw new Error(`Not a Page of the Theme or its Base theme: ${unknown.join(", ")}`);
 
-  const written = await project.addStories([...new Set(pages)], name);
-  for (const [page, file] of written) {
-    console.log(`Added Story "${name}" for ${page} to ${path.relative(process.cwd(), file)}: ${project.storyUrl(page, name)}`);
-    if (!withDefaults.has(page)) {
+  const added = await project.addStories(pages, name);
+  for (const { page, file, url, hasDefaultMockModel } of added.stories) {
+    console.log(`Added Story "${added.name}" for ${page} to ${path.relative(process.cwd(), file)}: ${url}`);
+    if (!hasDefaultMockModel) {
       console.warn(`Warning: ${page} has no default Mock model yet, so its Stories cannot render until one is added.`);
     }
   }

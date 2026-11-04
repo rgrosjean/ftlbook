@@ -1,7 +1,7 @@
 import { loadConfig } from "./config.ts";
 import { ensureBaseThemes } from "./keycloak-themes.ts";
 import { mockModelCatalog, type MockModelCatalog } from "./mock-models.ts";
-import { addStories, findStory, storyIndex, storyUrl, type IndexedPage, type Story } from "./stories.ts";
+import { addStories, DEFAULT_STORY, findStory, storyIndex, storyUrl, type IndexedPage, type Story } from "./stories.ts";
 import { findCommonResource, resolveThemeChain, type ThemeChain } from "./theme-chain.ts";
 import type { Resource } from "./resources.ts";
 
@@ -32,9 +32,26 @@ export interface Project {
   /** A Story by Page and name, the Default Story included. */
   findStory(page: string, name: string): Promise<Story | undefined>;
   storyIndex(): Promise<IndexedPage[]>;
-  /** Adds a Story named `name` to each Page; returns the Story file written for each Page. */
-  addStories(pages: string[], name: string): Promise<Map<string, string>>;
+  /**
+   * Scaffold: adds a Story to each of the given Pages (duplicates ignored). The name defaults to the
+   * Default Story's. Throws, writing nothing, when no Page is given, the name is empty or a Page is not a
+   * Page of the Theme chain.
+   */
+  addStories(pages: string[], name?: string): Promise<AddedStories>;
   storyUrl(page: string, name: string): string;
+}
+
+/** What the Scaffold added: the Story's name and, per Page, its Story file and URL. */
+export interface AddedStories {
+  name: string;
+  stories: {
+    page: string;
+    /** The Story file written. */
+    file: string;
+    url: string;
+    /** False when the tool ships no default Mock model for the Page, so its Stories cannot render yet. */
+    hasDefaultMockModel: boolean;
+  }[];
 }
 
 /**
@@ -50,6 +67,9 @@ export async function openProject(projectDir: string, progress: (msg: string) =>
   let baseThemes: Promise<string> | undefined;
   const baseThemesDir = () => (baseThemes ??= ensureBaseThemes(config.keycloakVersion, config.mavenRepository, progress));
 
+  const themeChain = async () => resolveThemeChain(config.themeDir, await baseThemesDir(), config.themeType);
+  const pageStoryUrl = (page: string, name: string) => storyUrl(config.themeType, page, name);
+
   return {
     themeType: config.themeType,
     port: config.port,
@@ -58,12 +78,31 @@ export async function openProject(projectDir: string, progress: (msg: string) =>
     setUp: async () => {
       await baseThemesDir();
     },
-    themeChain: async () => resolveThemeChain(config.themeDir, await baseThemesDir(), config.themeType),
+    themeChain,
     findCommonResource: async (baseTheme, resourcePath) =>
       findCommonResource(await baseThemesDir(), baseTheme, resourcePath),
     findStory: (page, name) => findStory(config.storiesDir, page, name),
     storyIndex: () => storyIndex(config.storiesDir, config.themeType),
-    addStories: (pages, name) => addStories(config.storiesDir, pages, name),
-    storyUrl: (page, name) => storyUrl(config.themeType, page, name),
+    addStories: async (pages, requestedName) => {
+      const name = (requestedName ?? DEFAULT_STORY).trim();
+      if (pages.length === 0) throw new Error("No Pages chosen");
+      if (name === "") throw new Error("The Story name must not be empty");
+      const themePages = new Set((await (await themeChain()).pages()).map((p) => p.page));
+      const unknown = pages.filter((page) => !themePages.has(page));
+      if (unknown.length > 0) throw new Error(`Not a Page of the Theme or its Base theme: ${unknown.join(", ")}`);
+
+      const withDefaults = new Set(await mockModels.pages());
+      const written = await addStories(config.storiesDir, [...new Set(pages)], name);
+      return {
+        name,
+        stories: [...written].map(([page, file]) => ({
+          page,
+          file,
+          url: pageStoryUrl(page, name),
+          hasDefaultMockModel: withDefaults.has(page),
+        })),
+      };
+    },
+    storyUrl: pageStoryUrl,
   };
 }
