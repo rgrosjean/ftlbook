@@ -114,7 +114,7 @@ export function applyOverrides(base: JsonObject, overrides: JsonObject): JsonObj
 }
 
 /** Plain assignment would hit the __proto__ setter for a "__proto__" key from JSON; define it as data instead. */
-function setOwn(target: JsonObject, key: string, value: Json) {
+export function setOwn(target: JsonObject, key: string, value: Json) {
   Object.defineProperty(target, key, { value, enumerable: true, writable: true, configurable: true });
 }
 

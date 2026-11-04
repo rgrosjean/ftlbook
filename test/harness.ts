@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
@@ -101,4 +101,20 @@ export async function startServer(
         child.kill("SIGTERM");
       }),
   };
+}
+
+/** Runs an ftl-preview command in `cwd` to completion, as a user would, feeding `input` to stdin. */
+export function runCli(
+  cwd: string,
+  args: string[],
+  { input = "", env = {} }: { input?: string; env?: Record<string, string> } = {},
+): { status: number | null; stdout: string; stderr: string } {
+  const result = spawnSync(process.execPath, [bin, ...args], {
+    cwd,
+    input,
+    encoding: "utf8",
+    env: { ...process.env, FTL_PREVIEW_CACHE_DIR: testCacheDir, ...env },
+    timeout: 120_000,
+  });
+  return { status: result.status, stdout: result.stdout, stderr: result.stderr };
 }

@@ -66,3 +66,9 @@ export async function defaultMockModel(major: number, themeType: string, page: s
     throw err;
   }
 }
+
+/** Pages the tool ships a default Mock model for, sorted. */
+export async function pagesWithDefaults(major: number, themeType: string): Promise<string[]> {
+  const files = await readdir(path.join(MOCK_MODELS_DIR, String(major), themeType));
+  return files.filter((f) => f.endsWith(".ftl.json")).map((f) => f.replace(/\.json$/, "")).sort();
+}
