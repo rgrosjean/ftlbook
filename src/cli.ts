@@ -4,8 +4,8 @@ import { startRenderer } from "./renderer-process.ts";
 import { startPreviewServer } from "./preview-server.ts";
 import { CONFIG_FILE, CONFIG_KEYS, loadConfig } from "./config.ts";
 import { mockModelCatalog } from "./mock-models.ts";
-import { resolveThemeChain } from "./theme-chain.ts";
-import { addStories, listPages, type ThemePage } from "./scaffold.ts";
+import { resolveThemeChain, type ThemePage } from "./theme-chain.ts";
+import { addStories } from "./scaffold.ts";
 import { DEFAULT_STORY, storyUrl } from "./stories.ts";
 import { createInterface } from "node:readline";
 import path from "node:path";
@@ -75,7 +75,7 @@ async function addStory(args: string[]) {
   const { values } = parseArgs({ args, options: { page: { type: "string", multiple: true }, story: { type: "string" } } });
   const config = await loadConfig(process.cwd());
   const baseThemesDir = await ensureBaseThemes(config.keycloakVersion, config.mavenRepository, progress);
-  const themePages = await listPages(await resolveThemeChain(config.themeDir, baseThemesDir, config.themeType));
+  const themePages = await (await resolveThemeChain(config.themeDir, baseThemesDir, config.themeType)).pages();
   const mockModels = await mockModelCatalog(config.keycloakVersion, config.themeType);
   if (mockModels.warning) console.warn(mockModels.warning);
   const withDefaults = new Set(await mockModels.pages());
@@ -85,7 +85,7 @@ async function addStory(args: string[]) {
   if (pages.length === 0) {
     const answers = stdinPrompts();
     console.log("Pages of the Theme and its Base theme:");
-    themePages.forEach((p, i) => console.log(`  ${String(i + 1).padStart(3)}. ${pageLabel(p, config.themeDir, withDefaults)}`));
+    themePages.forEach((p, i) => console.log(`  ${String(i + 1).padStart(3)}. ${pageLabel(p, withDefaults)}`));
     const choice = await answers.ask("Pages to add a Story for (numbers or names, comma-separated): ");
     pages = choice
       .split(",")
@@ -110,9 +110,8 @@ async function addStory(args: string[]) {
   }
 }
 
-function pageLabel(page: ThemePage, themeDir: string | undefined, withDefaults: Set<string>): string {
-  // Base themes are extracted to theme/<name>/<type>
-  const origin = page.themeDir === themeDir ? "Theme" : `Base theme ${path.basename(path.dirname(page.themeDir))}`;
+function pageLabel(page: ThemePage, withDefaults: Set<string>): string {
+  const origin = page.baseTheme === undefined ? "Theme" : `Base theme ${page.baseTheme}`;
   const note = withDefaults.has(page.page) ? "" : ", no default Mock model yet";
   return `${page.page.padEnd(45)} (${origin}${note})`;
 }

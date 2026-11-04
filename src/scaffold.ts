@@ -1,44 +1,7 @@
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { loadStories, setOwn, StoryFileError, type JsonObject } from "./stories.ts";
-
-/** A Page found in the Theme chain, with the Theme directory whose file wins. */
-export interface ThemePage {
-  page: string;
-  themeDir: string;
-}
-
-const IMPORT_OR_INCLUDE = /<#(?:import|include)\s+"([^"]+)"/g;
-
-/**
- * Every Page across the Theme chain (most specific first), sorted by name. A Page is an FTL file
- * that no other FTL file of the chain imports or includes: `template.ftl`, `field.ftl` and other
- * macro libraries are not Pages.
- */
-export async function listPages(chain: string[]): Promise<ThemePage[]> {
-  const pages = new Map<string, string>();
-  const used = new Set<string>();
-  for (const themeDir of chain) {
-    let files: string[];
-    try {
-      files = (await readdir(themeDir)).filter((f) => f.endsWith(".ftl"));
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === "ENOENT") continue;
-      throw err;
-    }
-    for (const file of files) {
-      if (!pages.has(file)) pages.set(file, themeDir);
-      for (const match of (await readFile(path.join(themeDir, file), "utf8")).matchAll(IMPORT_OR_INCLUDE)) {
-        used.add(path.basename(match[1]));
-      }
-    }
-  }
-  return [...pages]
-    .filter(([page]) => !used.has(page))
-    .map(([page, themeDir]) => ({ page, themeDir }))
-    .sort((a, b) => a.page.localeCompare(b.page));
-}
 
 /**
  * Adds an empty Story (the Page's default Mock model as is) named `name` to each Page. A Story goes

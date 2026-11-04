@@ -61,7 +61,7 @@ async function ensureKeycloakJar(
 }
 
 /**
- * Directory holding the extracted Base themes (`theme/<name>/<type>/...`, vendor assets included)
+ * Directory holding the extracted Base themes (vendor assets included; their layout is read by the Theme chain)
  * for a Keycloak version. The jars are unpacked once, with the Renderer jar's extractor, so the CLI
  * and Renderer read plain directories.
  */

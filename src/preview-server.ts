@@ -1,9 +1,7 @@
 import http from "node:http";
 import type { MockModelCatalog } from "./mock-models.ts";
 import type { RendererProcess } from "./renderer-process.ts";
-import { resolveThemeChain, themeLocales } from "./theme-chain.ts";
-import { findResource } from "./resources.ts";
-import path from "node:path";
+import { findCommonResource, resolveThemeChain } from "./theme-chain.ts";
 import { applyOverrides, findStory, storyIndex, StoryFileError } from "./stories.ts";
 import { errorOverlay } from "./error-overlay.ts";
 import { previewUi } from "./preview-ui.ts";
@@ -84,9 +82,9 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, optio
   const model = applyOverrides(defaults, story.model);
 
   // Resolved per request, so theme.properties edits show on the next reload
-  const themes = await resolveThemeChain(options.loginThemeDir, options.baseThemesDir, themeType);
+  const chain = await resolveThemeChain(options.loginThemeDir, options.baseThemesDir, themeType);
   const result = await options.renderer.render({
-    themes,
+    themes: chain.dirs,
     page,
     // ?locale= (the preview UI's locale selector) overrides the Story's locale
     locale: url.searchParams.get("locale") || story.locale || "en",
@@ -105,7 +103,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, optio
 async function serveUi(res: http.ServerResponse, options: PreviewServerOptions) {
   let locales = ["en"];
   try {
-    locales = await themeLocales(await resolveThemeChain(options.loginThemeDir, options.baseThemesDir, "login"));
+    locales = await (await resolveThemeChain(options.loginThemeDir, options.baseThemesDir, "login")).locales();
     const pages = await storyIndex(options.storiesDir, "login");
     send(res, 200, "text/html; charset=utf-8", previewUi({ pages, locales }));
   } catch (err) {
@@ -127,7 +125,7 @@ async function serveStoryIndex(res: http.ServerResponse, options: PreviewServerO
 
 /**
  * Login resources come from the login Theme chain (the theme name in the URL is cosmetic, as with one
- * Theme per project); common resources from the Base theme's common type, e.g. keycloak/common.
+ * Theme per project); common resources from the named Base theme's common type.
  */
 async function serveResource(
   res: http.ServerResponse,
@@ -142,12 +140,10 @@ async function serveResource(
   } catch {
     return send(res, 400, "text/plain; charset=utf-8", "Malformed URL");
   }
-  if (themeName === "." || themeName === "..") return send(res, 404, "text/plain; charset=utf-8", "Not found");
-  const themes =
+  const found =
     scope === "login"
-      ? await resolveThemeChain(options.loginThemeDir, options.baseThemesDir, "login")
-      : [path.join(options.baseThemesDir, "theme", themeName, "common")];
-  const found = await findResource(themes, resourcePath);
+      ? await (await resolveThemeChain(options.loginThemeDir, options.baseThemesDir, "login")).findResource(resourcePath)
+      : await findCommonResource(options.baseThemesDir, themeName, resourcePath);
   if (!found) return send(res, 404, "text/plain; charset=utf-8", `Resource not found: ${resourcePath}`);
   res.writeHead(200, { "content-type": found.contentType, "cache-control": "no-store" });
   res.end(found.body);
