@@ -19,6 +19,7 @@ export type StoryOutcome =
   | { kind: "invalid-story-file"; message: string }
   | { kind: "unknown-story"; page: string; storyName: string }
   | { kind: "render-failed"; error: RenderError }
+  | { kind: "renderer-failed"; message: string }
   /** `warnings` lists the template errors skipped in lenient mode. */
   | { kind: "ok"; html: string; warnings: string[] };
 
@@ -56,5 +57,6 @@ export async function renderStory(project: Project, renderer: RendererProcess, r
     model: applyOverrides(defaults, story.model),
     strict: request.strict,
   });
-  return result.ok ? { kind: "ok", html: result.html, warnings: result.warnings } : { kind: "render-failed", error: result.error };
+  if (result.ok) return { kind: "ok", html: result.html, warnings: result.warnings };
+  return "error" in result ? { kind: "render-failed", error: result.error } : { kind: "renderer-failed", message: result.rendererFailure };
 }

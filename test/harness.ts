@@ -116,6 +116,38 @@ export async function startServer(
   };
 }
 
+/** Process ids of a process's direct children. Needs `pgrep` (Linux, macOS). */
+export function childPids(pid: number): number[] {
+  const found = spawnSync("pgrep", ["-P", String(pid)], { encoding: "utf8" });
+  return found.stdout.split("\n").filter(Boolean).map(Number);
+}
+
+export function isAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Waits until `condition` holds, failing after `timeoutMs`. */
+export async function waitFor(condition: () => boolean, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition()) {
+    if (Date.now() > deadline) throw new Error("condition not met in time");
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+}
+
+/** Kills the Renderer (the JVM child process) of a running server, as a crash would, and waits until it is gone. */
+export async function killRenderer(server: RunningServer): Promise<void> {
+  const pids = childPids(server.process.pid!);
+  if (pids.length !== 1) throw new Error(`expected one Renderer process, found ${pids.length}`);
+  process.kill(pids[0], "SIGKILL");
+  await waitFor(() => !isAlive(pids[0]), 10_000);
+}
+
 /** Runs an ftl-preview command in `cwd` to completion, as a user would, feeding `input` to stdin. */
 export function runCli(
   cwd: string,

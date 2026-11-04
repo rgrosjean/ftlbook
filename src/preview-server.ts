@@ -80,6 +80,8 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, optio
       return send(res, 404, "text/plain; charset=utf-8", `Unknown Story: ${outcome.page}/${outcome.storyName}`);
     case "render-failed":
       return send(res, 500, "text/html; charset=utf-8", await errorOverlay("Render failed", outcome.error));
+    case "renderer-failed":
+      return send(res, 500, "text/html; charset=utf-8", await errorOverlay("Renderer failed", { message: outcome.message }));
     case "ok":
       for (const warning of outcome.warnings) console.warn(`[lenient] ${page}/${storyName}: skipped missing Mock model value\n${warning}\n`);
       return send(res, 200, "text/html; charset=utf-8", outcome.html);

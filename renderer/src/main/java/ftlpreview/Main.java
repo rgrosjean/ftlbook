@@ -46,8 +46,8 @@ public final class Main {
         watcher.start();
     }
 
-    private static void handle(HttpExchange exchange, Renderer renderer) throws IOException {
-        try (exchange) {
+    private static void handle(HttpExchange exchange, Renderer renderer) {
+        try {
             if (!"POST".equals(exchange.getRequestMethod())) {
                 send(exchange, 405, "text/plain", "POST only");
                 return;
@@ -66,6 +66,9 @@ public final class Main {
             } catch (IOException ignored) {
                 // response already started; nothing more to do
             }
+        } finally {
+            // Closed only now, so the error response above can still be sent
+            exchange.close();
         }
     }
 

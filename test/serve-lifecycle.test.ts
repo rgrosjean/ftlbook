@@ -1,12 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import { createReadStream, existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
-import { startServer, fixture, testCacheDir } from "./harness.ts";
+import { childPids, isAlive, startServer, fixture, testCacheDir, waitFor } from "./harness.ts";
 
 test("the Base theme is downloaded on first use and reused from the cache afterwards", async (t) => {
   // Make sure the shared test cache holds the jars, then serve them from a local Maven mirror,
@@ -70,31 +69,3 @@ test("stopping serve also stops the Renderer", async () => {
 
   await waitFor(() => rendererPids.every((pid) => !isAlive(pid)), 10_000);
 });
-
-function childPids(pid: number): number[] {
-  try {
-    return execFileSync("pgrep", ["-P", String(pid)], { encoding: "utf8" })
-      .split("\n")
-      .filter(Boolean)
-      .map(Number);
-  } catch {
-    return [];
-  }
-}
-
-function isAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function waitFor(condition: () => boolean, timeoutMs: number) {
-  const deadline = Date.now() + timeoutMs;
-  while (!condition()) {
-    if (Date.now() > deadline) assert.fail("condition not met in time");
-    await new Promise((r) => setTimeout(r, 100));
-  }
-}
