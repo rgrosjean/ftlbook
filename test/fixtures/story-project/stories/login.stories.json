@@ -17,6 +17,9 @@
     "WithoutSocial": {
       "model": { "social": null }
     },
+    "WithoutRealm": {
+      "model": { "realm": null }
+    },
     "German": {
       "locale": "de"
     }

@@ -17,16 +17,21 @@ export interface RenderRequest {
   page: string;
   locale: string;
   model: Record<string, unknown>;
+  /** Strict mode: a missing Mock model value fails the render. false (lenient): it is skipped and reported as a warning. */
+  strict: boolean;
 }
 
 export interface RenderError {
   message: string;
   template: string | null;
+  /** The template's file on disk, resolved through the Theme chain. */
+  file: string | null;
   line: number | null;
   column: number | null;
 }
 
-export type RenderResult = { ok: true; html: string } | { ok: false; error: RenderError };
+/** On success, `warnings` lists template errors skipped in lenient mode (always empty when strict). */
+export type RenderResult = { ok: true; html: string; warnings: string[] } | { ok: false; error: RenderError };
 
 export interface RendererProcess {
   render(request: RenderRequest): Promise<RenderResult>;
@@ -70,7 +75,13 @@ export async function startRenderer(): Promise<RendererProcess> {
         headers: { "content-type": "application/json" },
         body: JSON.stringify(request),
       });
-      if (res.status === 200) return { ok: true, html: await res.text() };
+      if (res.status === 200) {
+        const body = (await res.json().catch(() => undefined)) as { html?: string; warnings?: string[] } | undefined;
+        if (typeof body?.html !== "string") {
+          throw new Error('Unexpected Renderer response; rebuild it with "npm run build:renderer".');
+        }
+        return { ok: true, html: body.html, warnings: body.warnings ?? [] };
+      }
       if (res.status === 422) return { ok: false, error: ((await res.json()) as { error: RenderError }).error };
       throw new Error(`Renderer failed with HTTP ${res.status}: ${await res.text()}`);
     },

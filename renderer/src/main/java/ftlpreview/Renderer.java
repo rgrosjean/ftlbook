@@ -1,6 +1,7 @@
 package ftlpreview;
 
 import freemarker.core.HTMLOutputFormat;
+import freemarker.core.InvalidReferenceException;
 import freemarker.core.TemplateClassResolver;
 import freemarker.template.Configuration;
 import freemarker.template.SimpleScalar;
@@ -12,6 +13,7 @@ import freemarker.template.TemplateModelException;
 
 import java.io.IOException;
 import java.io.StringWriter;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -21,7 +23,7 @@ import java.util.Properties;
 /** Renders one Page with real FreeMarker, configured as Keycloak's DefaultFreeMarkerProvider. */
 final class Renderer {
 
-    String render(RenderRequest request) throws RenderException {
+    RenderResult render(RenderRequest request) throws RenderException {
         ThemeChain chain = ThemeChain.of(request.themes());
         Locale locale = Locale.forLanguageTag(request.locale() == null ? "en" : request.locale());
         Properties properties = chain.properties();
@@ -42,17 +44,19 @@ final class Renderer {
         model.putIfAbsent("darkMode", "true".equals(properties.getProperty("darkMode")));
         model.putIfAbsent("title", title(model, msg));
 
-        Configuration cfg = configuration(chain);
+        List<String> warnings = new ArrayList<>();
+        Configuration cfg = configuration(chain, request.isStrict(), warnings);
         try {
             Template template = cfg.getTemplate(request.page(), "UTF-8");
             StringWriter out = new StringWriter();
             template.process(model, out);
-            return out.toString();
+            return new RenderResult(out.toString(), warnings);
         } catch (TemplateException e) {
             throw new RenderException(e.getMessageWithoutStackTop(), e.getTemplateSourceName(),
-                    e.getLineNumber(), e.getColumnNumber(), e);
+                    fileOf(chain, e.getTemplateSourceName()), e.getLineNumber(), e.getColumnNumber(), e);
         } catch (freemarker.core.ParseException e) {
-            throw new RenderException(e.getEditorMessage(), e.getTemplateName(), e.getLineNumber(), e.getColumnNumber(), e);
+            throw new RenderException(e.getEditorMessage(), e.getTemplateName(), fileOf(chain, e.getTemplateName()),
+                    e.getLineNumber(), e.getColumnNumber(), e);
         } catch (freemarker.template.TemplateNotFoundException e) {
             throw new RenderException("Page not found in the Theme chain: " + request.page(), null, null, null, e);
         } catch (IOException e) {
@@ -60,14 +64,26 @@ final class Renderer {
         }
     }
 
-    private static Configuration configuration(ThemeChain chain) {
+    private static String fileOf(ThemeChain chain, String templateName) {
+        return templateName == null ? null : chain.find(templateName).map(Object::toString).orElse(null);
+    }
+
+    /**
+     * @param strict   true: any template error fails the render (RETHROW). false (lenient): a missing or null
+     *                 Mock model value skips the failing interpolation or directive and is added to {@code warnings};
+     *                 every other template error still fails the render.
+     */
+    private static Configuration configuration(ThemeChain chain, boolean strict, List<String> warnings) {
         Configuration cfg = new Configuration(Configuration.VERSION_2_3_32);
         cfg.setOutputFormat(HTMLOutputFormat.INSTANCE);
         cfg.setNewBuiltinClassResolver(TemplateClassResolver.ALLOWS_NOTHING_RESOLVER);
         cfg.setTemplateLoader(new ThemeTemplateLoader(chain));
         cfg.setDefaultEncoding("UTF-8");
         // Strict: a missing Mock model key fails and names the key and template line
-        cfg.setTemplateExceptionHandler(TemplateExceptionHandler.RETHROW_HANDLER);
+        cfg.setTemplateExceptionHandler(strict ? TemplateExceptionHandler.RETHROW_HANDLER : (e, env, out) -> {
+            if (!(e instanceof InvalidReferenceException)) throw e;
+            warnings.add(e.getMessageWithoutStackTop());
+        });
         cfg.setLogTemplateExceptions(false);
         return cfg;
     }

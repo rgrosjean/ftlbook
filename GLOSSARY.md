@@ -32,6 +32,10 @@ _Avoid_: Fixture data, stub context
 The script that lets a user choose which Pages to add, then creates their Story files.
 _Avoid_: Generator, init
 
+**Strict mode**:
+Rendering in which a missing Mock model value fails the Page with an error naming it. On by default; turning it off is lenient mode, where the failing part is skipped and reported.
+_Avoid_: Strict rendering, relaxed mode
+
 **Renderer**:
 The component that runs real FreeMarker on a Page with a Mock model and returns HTML.
 _Avoid_: Engine, compiler

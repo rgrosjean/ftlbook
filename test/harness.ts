@@ -25,10 +25,11 @@ export async function startServer(
   {
     cacheDir = testCacheDir,
     env = {},
+    args = [],
     timeoutMs = 120_000,
-  }: { cacheDir?: string; env?: Record<string, string>; timeoutMs?: number } = {},
+  }: { cacheDir?: string; env?: Record<string, string>; args?: string[]; timeoutMs?: number } = {},
 ): Promise<RunningServer> {
-  const child = spawn(process.execPath, [cli, "serve", "--port", "0"], {
+  const child = spawn(process.execPath, [cli, "serve", "--port", "0", ...args], {
     cwd,
     env: { ...process.env, FTL_PREVIEW_CACHE_DIR: cacheDir, ...env },
     stdio: ["ignore", "pipe", "pipe"],

@@ -5,6 +5,7 @@ import { resolveThemeChain } from "./theme-chain.ts";
 import { findResource } from "./resources.ts";
 import path from "node:path";
 import { applyOverrides, findStory, StoryFileError } from "./stories.ts";
+import { errorOverlay } from "./error-overlay.ts";
 
 export interface PreviewServerOptions {
   renderer: RendererProcess;
@@ -14,6 +15,8 @@ export interface PreviewServerOptions {
   baseThemesDir: string;
   /** Directory with the project's `*.stories.json` files. */
   storiesDir: string;
+  /** Strict mode (default): a missing Mock model value fails the render. Lenient: the failing part is skipped. */
+  strict: boolean;
   port: number;
 }
 
@@ -66,7 +69,9 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, optio
     // Story files are read on every request, so edits show on the next reload
     story = await findStory(options.storiesDir, page, storyName);
   } catch (err) {
-    if (err instanceof StoryFileError) return send(res, 500, "text/plain; charset=utf-8", `Invalid Story file\n\n${err.message}`);
+    if (err instanceof StoryFileError) {
+      return send(res, 500, "text/html; charset=utf-8", await errorOverlay("Invalid Story file", { message: err.message }));
+    }
     throw err;
   }
   if (!story) return send(res, 404, "text/plain; charset=utf-8", `Unknown Story: ${page}/${storyName}`);
@@ -81,12 +86,14 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, optio
     // ?locale= (the preview UI's locale selector) overrides the Story's locale
     locale: url.searchParams.get("locale") || story.locale || "en",
     model,
+    strict: options.strict,
   });
-  if (result.ok) return send(res, 200, "text/html; charset=utf-8", result.html);
+  if (result.ok) {
+    for (const warning of result.warnings) console.warn(`[lenient] ${page}/${story.name}: skipped missing Mock model value\n${warning}\n`);
+    return send(res, 200, "text/html; charset=utf-8", result.html);
+  }
 
-  const { message, template, line, column } = result.error;
-  const where = template ? `${template}:${line ?? "?"}:${column ?? "?"}\n\n` : "";
-  send(res, 500, "text/plain; charset=utf-8", `Render failed\n\n${where}${message}`);
+  send(res, 500, "text/html; charset=utf-8", await errorOverlay("Render failed", result.error));
 }
 
 /**

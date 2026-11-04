@@ -54,7 +54,7 @@ public final class Main {
             }
             RenderRequest request = JSON.readValue(exchange.getRequestBody(), RenderRequest.class);
             try {
-                send(exchange, 200, "text/html; charset=utf-8", renderer.render(request));
+                send(exchange, 200, "application/json", JSON.writeValueAsString(renderer.render(request)));
             } catch (RenderException e) {
                 send(exchange, 422, "application/json", JSON.writeValueAsString(Map.of("error", e.toJson())));
             }
