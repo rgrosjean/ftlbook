@@ -1,29 +1,24 @@
 import http from "node:http";
-import type { MockModelCatalog } from "./mock-models.ts";
+import type { Project } from "./project.ts";
 import type { RendererProcess } from "./renderer-process.ts";
-import { findCommonResource, resolveThemeChain } from "./theme-chain.ts";
-import { applyOverrides, findStory, storyIndex, StoryFileError } from "./stories.ts";
+import { applyOverrides, StoryFileError } from "./stories.ts";
 import { errorOverlay } from "./error-overlay.ts";
 import { previewUi } from "./preview-ui.ts";
 
 export interface PreviewServerOptions {
+  project: Project;
   renderer: RendererProcess;
-  /** Customer login Theme directory, if the project has one. */
-  loginThemeDir: string | undefined;
-  /** Extracted Base themes of the pinned Keycloak version. */
-  baseThemesDir: string;
-  /** Directory with the project's `*.stories.json` files. */
-  storiesDir: string;
   /** Strict mode (default): a missing Mock model value fails the render. Lenient: the failing part is skipped. */
   strict: boolean;
-  /** Default Mock models of the configured Theme type, which can only be login so far (see config). */
-  mockModels: MockModelCatalog;
   port: number;
 }
 
 const PREVIEW_ROUTE = /^\/preview\/([^/]+)\/([^/]+)\/([^/]+)$/;
-/** Mirrors Keycloak's url.resourcesPath (/resources/login/<theme>) and url.resourcesCommonPath (/resources/common/<theme>). */
-const RESOURCES_ROUTE = /^\/resources\/(login|common)\/([\w.-]+)\/(.+)$/;
+/**
+ * Mirrors Keycloak's url.resourcesPath (/resources/<theme-type>/<theme>, e.g. /resources/login/acme)
+ * and url.resourcesCommonPath (/resources/common/<theme>).
+ */
+const RESOURCES_ROUTE = /^\/resources\/([\w.-]+)\/([\w.-]+)\/(.+)$/;
 
 /** Dev server: renders each Story fresh on every request (no caching in dev). */
 export async function startPreviewServer(options: PreviewServerOptions): Promise<{ url: string; close(): Promise<void> }> {
@@ -52,7 +47,10 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, optio
   if (url.pathname === "/") return serveUi(res, options);
   if (url.pathname === "/api/stories") return serveStoryIndex(res, options);
   const resource = RESOURCES_ROUTE.exec(url.pathname);
-  if (resource) return serveResource(res, options, resource[1] as "login" | "common", resource[2], resource[3]);
+  const common = resource?.[1] === "common";
+  if (resource && (common || resource[1] === options.project.themeType)) {
+    return serveResource(res, options, common, resource[2], resource[3]);
+  }
   const match = PREVIEW_ROUTE.exec(url.pathname);
   if (!match) return send(res, 404, "text/plain; charset=utf-8", "Not found");
 
@@ -62,15 +60,15 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, optio
   } catch {
     return send(res, 400, "text/plain; charset=utf-8", "Malformed URL");
   }
-  if (themeType !== "login") return send(res, 404, "text/plain; charset=utf-8", `Unsupported Theme type: ${themeType}`);
+  if (themeType !== options.project.themeType) return send(res, 404, "text/plain; charset=utf-8", `Unsupported Theme type: ${themeType} (this Project previews ${options.project.themeType})`);
 
-  const defaults = await options.mockModels.defaultFor(page);
+  const defaults = await options.project.mockModels.defaultFor(page);
   if (!defaults) return send(res, 404, "text/plain; charset=utf-8", `No default Mock model for Page: ${page}`);
 
   let story;
   try {
     // Story files are read on every request, so edits show on the next reload
-    story = await findStory(options.storiesDir, page, storyName);
+    story = await options.project.findStory(page, storyName);
   } catch (err) {
     if (err instanceof StoryFileError) {
       return send(res, 500, "text/html; charset=utf-8", await errorOverlay("Invalid Story file", { message: err.message }));
@@ -82,7 +80,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, optio
   const model = applyOverrides(defaults, story.model);
 
   // Resolved per request, so theme.properties edits show on the next reload
-  const chain = await resolveThemeChain(options.loginThemeDir, options.baseThemesDir, themeType);
+  const chain = await options.project.themeChain();
   const result = await options.renderer.render({
     themes: chain.dirs,
     page,
@@ -103,8 +101,8 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, optio
 async function serveUi(res: http.ServerResponse, options: PreviewServerOptions) {
   let locales = ["en"];
   try {
-    locales = await (await resolveThemeChain(options.loginThemeDir, options.baseThemesDir, "login")).locales();
-    const pages = await storyIndex(options.storiesDir, "login");
+    locales = await (await options.project.themeChain()).locales();
+    const pages = await options.project.storyIndex();
     send(res, 200, "text/html; charset=utf-8", previewUi({ pages, locales }));
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -112,10 +110,10 @@ async function serveUi(res: http.ServerResponse, options: PreviewServerOptions) 
   }
 }
 
-/** The Page/Story list the preview UI shows (v1 supports the login Theme type only). */
+/** The Page/Story list the preview UI shows. */
 async function serveStoryIndex(res: http.ServerResponse, options: PreviewServerOptions) {
   try {
-    const pages = await storyIndex(options.storiesDir, "login");
+    const pages = await options.project.storyIndex();
     send(res, 200, "application/json; charset=utf-8", JSON.stringify({ pages }));
   } catch (err) {
     if (!(err instanceof StoryFileError)) throw err;
@@ -124,13 +122,13 @@ async function serveStoryIndex(res: http.ServerResponse, options: PreviewServerO
 }
 
 /**
- * Login resources come from the login Theme chain (the theme name in the URL is cosmetic, as with one
+ * Resources of the Project's Theme type come from the Theme chain (the theme name in the URL is cosmetic, as with one
  * Theme per project); common resources from the named Base theme's common type.
  */
 async function serveResource(
   res: http.ServerResponse,
   options: PreviewServerOptions,
-  scope: "login" | "common",
+  common: boolean,
   themeName: string,
   encodedPath: string,
 ) {
@@ -141,9 +139,9 @@ async function serveResource(
     return send(res, 400, "text/plain; charset=utf-8", "Malformed URL");
   }
   const found =
-    scope === "login"
-      ? await (await resolveThemeChain(options.loginThemeDir, options.baseThemesDir, "login")).findResource(resourcePath)
-      : await findCommonResource(options.baseThemesDir, themeName, resourcePath);
+    common
+      ? await options.project.findCommonResource(themeName, resourcePath)
+      : await (await options.project.themeChain()).findResource(resourcePath);
   if (!found) return send(res, 404, "text/plain; charset=utf-8", `Resource not found: ${resourcePath}`);
   res.writeHead(200, { "content-type": found.contentType, "cache-control": "no-store" });
   res.end(found.body);

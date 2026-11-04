@@ -1,11 +1,10 @@
 import { parseArgs } from "node:util";
-import { ensureBaseThemes } from "./keycloak-themes.ts";
 import { startRenderer } from "./renderer-process.ts";
 import { startPreviewServer } from "./preview-server.ts";
-import { CONFIG_FILE, CONFIG_KEYS, loadConfig } from "./config.ts";
-import { mockModelCatalog } from "./mock-models.ts";
-import { resolveThemeChain, type ThemePage } from "./theme-chain.ts";
-import { addStories, DEFAULT_STORY, storyUrl } from "./stories.ts";
+import { CONFIG_FILE, CONFIG_KEYS } from "./config.ts";
+import { openProject, type Project } from "./project.ts";
+import type { ThemePage } from "./theme-chain.ts";
+import { DEFAULT_STORY } from "./stories.ts";
 import { createInterface } from "node:readline";
 import path from "node:path";
 
@@ -27,6 +26,18 @@ Config: optional ${CONFIG_FILE} at the project root, with the keys ${CONFIG_KEYS
 /** Progress goes to stderr, so stdout carries only a command's result. */
 const progress = (msg: string) => console.error(msg);
 
+/**
+ * Opens the Project in the working directory and shows its warnings (on stderr, so stdout carries
+ * only the result). With `setUp`, Java and the Base themes are set up first, so a missing JDK or a
+ * failed download fails the command before anything else.
+ */
+async function openProjectInCwd({ setUp }: { setUp: boolean }): Promise<Project> {
+  const project = await openProject(process.cwd(), progress);
+  if (setUp) await project.setUp();
+  if (project.mockModels.warning) console.warn(project.mockModels.warning);
+  return project;
+}
+
 async function main(argv: string[]) {
   const [command, ...rest] = argv;
   if (command === "serve") return serve(rest);
@@ -41,22 +52,14 @@ async function serve(args: string[]) {
   if (values.port !== undefined && (!/^\d+$/.test(values.port) || Number(values.port) > 65535)) {
     throw new Error(`Invalid --port: ${values.port} (expected 0-65535)`);
   }
-  const config = await loadConfig(process.cwd());
-
-  const baseThemesDir = await ensureBaseThemes(config.keycloakVersion, config.mavenRepository, progress);
-
-  const mockModels = await mockModelCatalog(config.keycloakVersion, config.themeType);
-  if (mockModels.warning) console.warn(mockModels.warning);
+  const project = await openProjectInCwd({ setUp: true });
 
   const renderer = await startRenderer();
   const server = await startPreviewServer({
+    project,
     renderer,
-    loginThemeDir: config.themeDir,
-    baseThemesDir,
-    storiesDir: config.storiesDir,
-    strict: config.strict && !values.lenient,
-    mockModels,
-    port: values.port === undefined ? config.port : Number(values.port),
+    strict: project.strict && !values.lenient,
+    port: values.port === undefined ? project.port : Number(values.port),
   });
 
   const shutdown = async () => {
@@ -72,12 +75,9 @@ async function serve(args: string[]) {
 
 async function addStory(args: string[]) {
   const { values } = parseArgs({ args, options: { page: { type: "string", multiple: true }, story: { type: "string" } } });
-  const config = await loadConfig(process.cwd());
-  const baseThemesDir = await ensureBaseThemes(config.keycloakVersion, config.mavenRepository, progress);
-  const themePages = await (await resolveThemeChain(config.themeDir, baseThemesDir, config.themeType)).pages();
-  const mockModels = await mockModelCatalog(config.keycloakVersion, config.themeType);
-  if (mockModels.warning) console.warn(mockModels.warning);
-  const withDefaults = new Set(await mockModels.pages());
+  const project = await openProjectInCwd({ setUp: true });
+  const themePages = await (await project.themeChain()).pages();
+  const withDefaults = new Set(await project.mockModels.pages());
 
   let pages = values.page ?? [];
   let name = values.story;
@@ -100,9 +100,9 @@ async function addStory(args: string[]) {
   const unknown = pages.filter((page) => !themePages.some((p) => p.page === page));
   if (unknown.length > 0) throw new Error(`Not a Page of the Theme or its Base theme: ${unknown.join(", ")}`);
 
-  const written = await addStories(config.storiesDir, [...new Set(pages)], name);
+  const written = await project.addStories([...new Set(pages)], name);
   for (const [page, file] of written) {
-    console.log(`Added Story "${name}" for ${page} to ${path.relative(process.cwd(), file)}: ${storyUrl(config.themeType, page, name)}`);
+    console.log(`Added Story "${name}" for ${page} to ${path.relative(process.cwd(), file)}: ${project.storyUrl(page, name)}`);
     if (!withDefaults.has(page)) {
       console.warn(`Warning: ${page} has no default Mock model yet, so its Stories cannot render until one is added.`);
     }
@@ -133,14 +133,12 @@ async function model(args: string[]) {
   const { positionals } = parseArgs({ args, allowPositionals: true });
   if (positionals.length !== 1) throw new Error(`Usage: ftl-preview model <page>, e.g. ftl-preview model login.ftl`);
   const [page] = positionals;
-  const config = await loadConfig(process.cwd());
-  const mockModels = await mockModelCatalog(config.keycloakVersion, config.themeType);
-  // stdout carries only the JSON, so it can be piped
-  if (mockModels.warning) console.warn(mockModels.warning);
+  // Java-free: the default Mock models need no Base themes. stdout carries only the JSON, so it can be piped
+  const project = await openProjectInCwd({ setUp: false });
 
-  const defaults = await mockModels.defaultFor(page);
+  const defaults = await project.mockModels.defaultFor(page);
   if (!defaults) {
-    const pages = await mockModels.pages();
+    const pages = await project.mockModels.pages();
     throw new Error(`No default Mock model for ${page}. Pages with one: ${pages.join(", ")}`);
   }
   console.log(JSON.stringify(defaults, null, 2));
