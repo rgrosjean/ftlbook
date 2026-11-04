@@ -3,7 +3,8 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const cli = path.join(repoRoot, "src", "cli.ts");
+/** The ftl-preview command, as installed. */
+export const bin = path.join(repoRoot, "bin", "ftl-preview.js");
 
 /** Shared download cache so the keycloak-themes jar is fetched once across test runs. */
 export const testCacheDir = path.join(repoRoot, ".cache", "test");
@@ -26,10 +27,19 @@ export async function startServer(
     cacheDir = testCacheDir,
     env = {},
     args = [],
+    port = 0,
     timeoutMs = 120_000,
-  }: { cacheDir?: string; env?: Record<string, string>; args?: string[]; timeoutMs?: number } = {},
+  }: {
+    cacheDir?: string;
+    env?: Record<string, string>;
+    args?: string[];
+    /** Passed as --port; null leaves the port to the project's config. */
+    port?: number | null;
+    timeoutMs?: number;
+  } = {},
 ): Promise<RunningServer> {
-  const child = spawn(process.execPath, [cli, "serve", "--port", "0", ...args], {
+  const portArgs = port === null ? [] : ["--port", String(port)];
+  const child = spawn(process.execPath, [bin, "serve", ...portArgs, ...args], {
     cwd,
     env: { ...process.env, FTL_PREVIEW_CACHE_DIR: cacheDir, ...env },
     stdio: ["ignore", "pipe", "pipe"],

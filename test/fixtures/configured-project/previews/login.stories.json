@@ -1,0 +1,6 @@
+{
+  "page": "login.ftl",
+  "stories": {
+    "OtherRealm": { "model": { "realm": { "name": "configuredrealm" } } }
+  }
+}

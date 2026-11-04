@@ -25,20 +25,28 @@ export function cacheDir(): string {
   return path.join(base, "ftl-preview");
 }
 
-/** Maven repository to download from; FTL_PREVIEW_MAVEN_REPO points at a mirror (e.g. an internal Nexus). */
-function mavenRepository(): string {
-  return (process.env.FTL_PREVIEW_MAVEN_REPO ?? MAVEN_CENTRAL).replace(/\/+$/, "");
+/**
+ * Maven repository to download from: FTL_PREVIEW_MAVEN_REPO (a machine's mirror, e.g. an internal Nexus)
+ * wins over the project's configured repository, which wins over Maven Central.
+ */
+function mavenRepository(configured: string | undefined): string {
+  return (process.env.FTL_PREVIEW_MAVEN_REPO ?? configured ?? MAVEN_CENTRAL).replace(/\/+$/, "");
 }
 
 /**
  * Path to an `org.keycloak` jar for a Keycloak version, downloaded on first use and reused
  * from the cache afterwards. Never bundled.
  */
-async function ensureKeycloakJar(artifact: string, version: string, log: (msg: string) => void): Promise<string> {
+async function ensureKeycloakJar(
+  artifact: string,
+  version: string,
+  repository: string | undefined,
+  log: (msg: string) => void,
+): Promise<string> {
   const file = path.join(cacheDir(), "keycloak", version, `${artifact}-${version}.jar`);
   if (await exists(file)) return file;
 
-  const url = `${mavenRepository()}/org/keycloak/${artifact}/${version}/${artifact}-${version}.jar`;
+  const url = `${mavenRepository(repository)}/org/keycloak/${artifact}/${version}/${artifact}-${version}.jar`;
   log(`Downloading Base theme for Keycloak ${version}: ${url}`);
   const res = await fetch(url);
   if (!res.ok || !res.body) {
@@ -61,12 +69,16 @@ async function ensureKeycloakJar(artifact: string, version: string, log: (msg: s
  * for a Keycloak version. The jars are unpacked once, with the Renderer jar's extractor, so the CLI
  * and Renderer read plain directories.
  */
-export async function ensureBaseThemes(version: string, log: (msg: string) => void): Promise<string> {
+export async function ensureBaseThemes(
+  version: string,
+  repository: string | undefined,
+  log: (msg: string) => void,
+): Promise<string> {
   const dir = path.join(cacheDir(), "keycloak", version, "base-themes");
   if (await isDirectory(dir)) return dir;
 
   const jars: string[] = [];
-  for (const artifact of BASE_THEME_ARTIFACTS) jars.push(await ensureKeycloakJar(artifact, version, log));
+  for (const artifact of BASE_THEME_ARTIFACTS) jars.push(await ensureKeycloakJar(artifact, version, repository, log));
 
   const partial = `${dir}.${process.pid}.part`;
   try {
