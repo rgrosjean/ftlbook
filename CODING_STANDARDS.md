@@ -22,8 +22,8 @@ Keycloak or a literal worked example, not from recomputing what the code does.
   `runCli`, `runCliAsync`, `copyProject`, `configure`, `tempDir`) or `test/maven-repository.ts`
   (`startFakeKeycloakRepository`, `zip`). Extend those rather than copying a helper.
 - Use the exported constants and helpers for domain values: `DEFAULT_STORY`, `storyUrl`,
-  `setOwn` (for keys from JSON input), `CONFIG_FILE`, `CONFIG_KEYS`. A literal that
-  duplicates one of them is a finding.
+  `CONFIG_FILE`, `CONFIG_KEYS`. A literal that duplicates one of them is a finding. Keys from
+  JSON input are set with `setOwn` (in `src/stories.ts`), never by plain assignment.
 
 ## Keycloak fidelity
 

@@ -1,10 +1,11 @@
-import { readdir, readFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import path from "node:path";
 
 /** Every Page has this Story, even without a Story file: the default Mock model as is. */
 export const DEFAULT_STORY = "Default";
 
-const STORY_FILE = /\.stories\.json$/;
+const STORY_FILE_SUFFIX = ".stories.json";
 
 export type JsonObject = { [key: string]: Json };
 export type Json = string | number | boolean | null | Json[] | JsonObject;
@@ -35,7 +36,7 @@ export async function findStory(storiesDir: string, page: string, name: string):
 }
 
 /** All Stories defined in the stories directory, in file order. */
-export async function loadStories(storiesDir: string): Promise<Story[]> {
+async function loadStories(storiesDir: string): Promise<Story[]> {
   const stories: Story[] = [];
   for (const file of await storyFiles(storiesDir)) {
     for (const story of parseStoryFile(file, await readFile(file, "utf8"))) {
@@ -58,7 +59,7 @@ async function storyFiles(storiesDir: string): Promise<string[]> {
     throw err;
   }
   return entries
-    .filter((e) => e.isFile() && STORY_FILE.test(e.name))
+    .filter((e) => e.isFile() && e.name.endsWith(STORY_FILE_SUFFIX))
     .map((e) => path.join(e.parentPath, e.name))
     .sort();
 }
@@ -93,6 +94,44 @@ function parseStoryFile(file: string, text: string): Story[] {
 }
 
 /**
+ * Adds an empty Story (the Page's default Mock model as is) named `name` to each Page. A Story goes
+ * into the Story file that already has Stories for its Page, keeping them, else into a new
+ * `<page>.stories.json`. Nothing is written when any Page already has a Story of that name.
+ * Returns the file written for each Page.
+ */
+export async function addStories(storiesDir: string, pages: string[], name: string): Promise<Map<string, string>> {
+  const stories = await loadStories(storiesDir);
+  const clash = stories.find((s) => pages.includes(s.page) && s.name === name);
+  if (clash) throw new StoryFileError(`${clash.page} already has a Story "${name}" (in ${clash.file})`);
+
+  // Read and check every target file before writing any
+  const updates: { page: string; file: string; json: JsonObject }[] = [];
+  for (const page of pages) {
+    const file = stories.find((s) => s.page === page)?.file ?? defaultStoryFilePath(storiesDir, page);
+    let json: JsonObject = { page, stories: {} };
+    if (existsSync(file)) {
+      json = JSON.parse(await readFile(file, "utf8"));
+      if (json.page !== page) throw new StoryFileError(`${file} already exists for another Page (${json.page})`);
+    }
+    updates.push({ page, file, json });
+  }
+
+  const written = new Map<string, string>();
+  for (const { page, file, json } of updates) {
+    setOwn(json.stories as JsonObject, name, {});
+    await mkdir(path.dirname(file), { recursive: true });
+    await writeFile(file, `${JSON.stringify(json, null, 2)}\n`);
+    written.set(page, file);
+  }
+  return written;
+}
+
+/** Where a Page's first Story goes: `<page>.stories.json`, without the `.ftl`. */
+function defaultStoryFilePath(storiesDir: string, page: string): string {
+  return path.join(storiesDir, `${page.replace(/\.ftl$/, "")}${STORY_FILE_SUFFIX}`);
+}
+
+/**
  * Applies Story overrides to a Mock model: objects merge recursively, arrays and other values
  * replace, and `null` deletes the key (Keycloak omits absent attributes; templates test presence).
  */
@@ -114,7 +153,7 @@ export function applyOverrides(base: JsonObject, overrides: JsonObject): JsonObj
 }
 
 /** Plain assignment would hit the __proto__ setter for a "__proto__" key from JSON; define it as data instead. */
-export function setOwn(target: JsonObject, key: string, value: Json) {
+function setOwn(target: JsonObject, key: string, value: Json) {
   Object.defineProperty(target, key, { value, enumerable: true, writable: true, configurable: true });
 }
 

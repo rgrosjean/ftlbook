@@ -5,8 +5,7 @@ import { startPreviewServer } from "./preview-server.ts";
 import { CONFIG_FILE, CONFIG_KEYS, loadConfig } from "./config.ts";
 import { mockModelCatalog } from "./mock-models.ts";
 import { resolveThemeChain, type ThemePage } from "./theme-chain.ts";
-import { addStories } from "./scaffold.ts";
-import { DEFAULT_STORY, storyUrl } from "./stories.ts";
+import { addStories, DEFAULT_STORY, storyUrl } from "./stories.ts";
 import { createInterface } from "node:readline";
 import path from "node:path";
 
