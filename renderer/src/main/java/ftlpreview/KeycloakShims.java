@@ -1,10 +1,10 @@
 package ftlpreview;
 
-import freemarker.template.SimpleScalar;
 import freemarker.template.TemplateMethodModelEx;
 import freemarker.template.TemplateModelException;
 import freemarker.template.TemplateScalarModel;
 import freemarker.template.utility.DeepUnwrap;
+import org.owasp.html.Encoding;
 
 import java.text.MessageFormat;
 import java.util.HashMap;
@@ -20,6 +20,7 @@ import java.util.regex.Pattern;
  */
 final class KeycloakShims {
     private static final Pattern VARIABLE = Pattern.compile("\\$\\{([^}]+)}");
+    private static final Pattern HREF = Pattern.compile("\\s+href=\"([^\"]*)\"");
 
     private KeycloakShims() {}
 
@@ -51,11 +52,38 @@ final class KeycloakShims {
     }
 
     /**
-     * {@code kcSanitize(html)}. Pass-through for now: the OWASP sanitizer Keycloak uses
-     * is ticket 07 (Common Pages and Keycloak helpers).
+     * {@code kcSanitize(html)}, as Keycloak's KeycloakSanitizerMethod: HTML-decodes up to 5 times,
+     * sanitizes with Keycloak's OWASP policy, then un-escapes {@code href} values.
      */
     static TemplateMethodModelEx kcSanitize() {
-        return args -> args.isEmpty() ? new SimpleScalar("") : args.get(0);
+        return args -> {
+            if (args.isEmpty() || args.get(0) == null) throw new TemplateModelException("Can not escape null value.");
+            String sanitized = KeycloakSanitizerPolicy.POLICY_DEFINITION.sanitize(decodeHtmlFull(string(args.get(0))));
+            return fixUrls(sanitized);
+        };
+    }
+
+    /** Keycloak assumes HTML may be encoded several times; still encoded after 5 decodings yields "". */
+    private static String decodeHtmlFull(String html) {
+        for (int i = 0; i < 5; i++) {
+            String decoded = Encoding.decodeHtml(html);
+            if (decoded.equals(html)) return html;
+            html = decoded;
+        }
+        return "";
+    }
+
+    /** Keycloak undoes the sanitizer's escaping inside {@code href} values. */
+    private static String fixUrls(String html) {
+        Matcher m = HREF.matcher(html);
+        StringBuilder out = new StringBuilder(html.length());
+        int last = 0;
+        while (m.find()) {
+            String href = m.group(1).replaceAll("&#61;", "=").replaceAll("\\.\\.", ".").replaceAll("&amp;", "&");
+            out.append(html, last, m.start(1)).append(href);
+            last = m.end(1);
+        }
+        return out.append(html.substring(last)).toString();
     }
 
     /** {@code auth}: Keycloak exposes {@code show*} as methods; Mock model data gives them as booleans. */

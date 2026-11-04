@@ -1,0 +1,13 @@
+{
+  "page": "error.ftl",
+  "stories": {
+    "HtmlMessage": {
+      "model": {
+        "message": {
+          "type": "error",
+          "summary": "<b>Bold</b><script>alert(1)</script> &lt;i&gt;encoded&lt;/i&gt; <a href=\"https://example.com/?a=1&b=2\" onclick=\"steal()\">link</a>"
+        }
+      }
+    }
+  }
+}

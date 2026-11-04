@@ -1,0 +1,22 @@
+{
+  "page": "register.ftl",
+  "stories": {
+    "UsernameTaken": {
+      "model": {
+        "messagesPerField": {
+          "username": {
+            "type": "error",
+            "summary": "Username already exists."
+          }
+        }
+      }
+    },
+    "RecaptchaRequiredFalse": {
+      "model": {
+        "recaptchaRequired": false,
+        "recaptchaSiteKey": "6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI",
+        "recaptchaAction": "register"
+      }
+    }
+  }
+}

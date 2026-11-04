@@ -1,0 +1,44 @@
+{
+  "realm": {
+    "name": "myrealm",
+    "displayName": "myrealm",
+    "displayNameHtml": "myrealm",
+    "internationalizationEnabled": false,
+    "registrationAllowed": true,
+    "registrationEmailAsUsername": false,
+    "loginWithEmailAllowed": true,
+    "duplicateEmailsAllowed": false,
+    "resetPasswordAllowed": true,
+    "rememberMe": true,
+    "editUsernameAllowed": false,
+    "password": true
+  },
+  "url": {
+    "loginAction": "#",
+    "loginUrl": "#",
+    "loginRestartFlowUrl": "#",
+    "ssoLoginInOtherTabsUrl": "#",
+    "registrationAction": "#",
+    "registrationUrl": "#",
+    "loginResetCredentialsUrl": "#",
+    "resourcesPath": "/resources/login/keycloak.v2",
+    "resourcesCommonPath": "/resources/common/keycloak"
+  },
+  "auth": {
+    "showUsername": false,
+    "showResetCredentials": false,
+    "showTryAnotherWayLink": false
+  },
+  "messagesPerField": {},
+  "scripts": [],
+  "message": {
+    "type": "error",
+    "summary": "An error occurred, please login again through your application."
+  },
+  "statusCode": 400,
+  "client": {
+    "clientId": "account-console",
+    "name": "${client_account-console}",
+    "baseUrl": "#"
+  }
+}

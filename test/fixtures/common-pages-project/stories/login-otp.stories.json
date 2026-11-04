@@ -1,0 +1,11 @@
+{
+  "page": "login-otp.ftl",
+  "stories": {
+    "UsernameHidden": {
+      "model": { "auth": { "showUsername": false } }
+    },
+    "OtherWays": {
+      "model": { "auth": { "showTryAnotherWayLink": true } }
+    }
+  }
+}
