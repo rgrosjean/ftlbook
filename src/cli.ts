@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 import { parseArgs } from "node:util";
-import { DEFAULT_KEYCLOAK_VERSION, ensureKeycloakThemesJar } from "./keycloak-themes.ts";
+import { DEFAULT_KEYCLOAK_VERSION, ensureBaseThemes } from "./keycloak-themes.ts";
 import { startRenderer } from "./renderer-process.ts";
 import { startPreviewServer } from "./preview-server.ts";
-import type { ThemeRoot } from "./renderer-process.ts";
+import { existsSync } from "node:fs";
+import path from "node:path";
 
 const DEFAULT_PORT = 6006;
 
@@ -27,17 +28,13 @@ async function serve(args: string[]) {
   }
 
   const log = (msg: string) => console.log(msg);
-  const jar = await ensureKeycloakThemesJar(DEFAULT_KEYCLOAK_VERSION, log);
-  // keycloak.v2 login chain as Keycloak builds it: theme, its import (common/keycloak), its parent (base).
-  // Fixed until ticket 02 reads parent/import from theme.properties.
-  const themes: ThemeRoot[] = [
-    { jar, path: "theme/keycloak.v2/login" },
-    { jar, path: "theme/keycloak/common" },
-    { jar, path: "theme/base/login" },
-  ];
+  const baseThemesDir = await ensureBaseThemes(DEFAULT_KEYCLOAK_VERSION, log);
+  // Zero config: the customer login Theme lives in theme/login; without it the Base theme renders alone
+  const themeDirCandidate = path.resolve("theme", "login");
+  const loginThemeDir = existsSync(themeDirCandidate) ? themeDirCandidate : undefined;
 
   const renderer = await startRenderer();
-  const server = await startPreviewServer({ renderer, themes, port });
+  const server = await startPreviewServer({ renderer, loginThemeDir, baseThemesDir, port });
 
   const shutdown = async () => {
     await server.close();

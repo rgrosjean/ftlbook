@@ -3,19 +3,15 @@ package ftlpreview;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
-import java.nio.file.FileSystem;
-import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.PropertyResourceBundle;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * The ordered Theme directories a Page is resolved against, most specific first
@@ -23,34 +19,15 @@ import java.util.concurrent.ConcurrentHashMap;
  * Every lookup reads from disk, so edits show on the next render.
  */
 final class ThemeChain {
-    private static final Map<Path, FileSystem> JARS = new ConcurrentHashMap<>();
-
     private final List<Path> roots;
 
     private ThemeChain(List<Path> roots) {
         this.roots = roots;
     }
 
-    static ThemeChain of(List<RenderRequest.ThemeRoot> themes) {
-        List<Path> roots = new ArrayList<>();
-        for (RenderRequest.ThemeRoot theme : themes) {
-            if (theme.jar() == null) {
-                roots.add(Path.of(theme.path()));
-            } else {
-                roots.add(jar(Path.of(theme.jar())).getPath("/" + theme.path()));
-            }
-        }
-        return new ThemeChain(roots);
-    }
-
-    private static FileSystem jar(Path jarFile) {
-        return JARS.computeIfAbsent(jarFile.toAbsolutePath(), p -> {
-            try {
-                return FileSystems.newFileSystem(p);
-            } catch (IOException e) {
-                throw new UncheckedIOException("Cannot open theme jar " + p, e);
-            }
-        });
+    /** The chain as the CLI resolved it (parent/import walk happens on the Node side). */
+    static ThemeChain of(List<String> themeDirs) {
+        return new ThemeChain(themeDirs.stream().map(d -> Path.of(d).toAbsolutePath().normalize()).toList());
     }
 
     /** First Theme in the chain that has the file; names escaping the Theme directory are rejected. */

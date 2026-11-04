@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
-const RENDERER_JAR = path.resolve(
+export const RENDERER_JAR = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "..",
   "renderer",
@@ -11,12 +11,9 @@ const RENDERER_JAR = path.resolve(
   "ftl-preview-renderer.jar",
 );
 
-/** One Theme directory: on disk, or a directory inside a jar. */
-export type ThemeRoot = { path: string; jar?: string };
-
 export interface RenderRequest {
-  /** Most specific first. */
-  themes: ThemeRoot[];
+  /** Theme chain directories, most specific first. */
+  themes: string[];
   page: string;
   locale: string;
   model: Record<string, unknown>;

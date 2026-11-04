@@ -1,11 +1,14 @@
 import http from "node:http";
 import { defaultMockModel } from "./mock-models.ts";
-import type { RendererProcess, ThemeRoot } from "./renderer-process.ts";
+import type { RendererProcess } from "./renderer-process.ts";
+import { resolveThemeChain } from "./theme-chain.ts";
 
 export interface PreviewServerOptions {
   renderer: RendererProcess;
-  /** Theme chain for the login Theme type, most specific first. */
-  themes: ThemeRoot[];
+  /** Customer login Theme directory, if the project has one. */
+  loginThemeDir: string | undefined;
+  /** Extracted Base themes of the pinned Keycloak version. */
+  baseThemesDir: string;
   port: number;
 }
 
@@ -33,8 +36,8 @@ export async function startPreviewServer(options: PreviewServerOptions): Promise
 }
 
 async function handle(req: http.IncomingMessage, res: http.ServerResponse, options: PreviewServerOptions) {
-  const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
-  const match = PREVIEW_ROUTE.exec(pathname);
+  const url = new URL(req.url ?? "/", "http://localhost");
+  const match = PREVIEW_ROUTE.exec(url.pathname);
   if (req.method !== "GET" || !match) return send(res, 404, "text/plain; charset=utf-8", "Not found");
 
   let themeType: string, page: string, story: string;
@@ -49,7 +52,15 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, optio
   const model = await defaultMockModel(themeType, page);
   if (!model) return send(res, 404, "text/plain; charset=utf-8", `No default Mock model for Page: ${page}`);
 
-  const result = await options.renderer.render({ themes: options.themes, page, locale: "en", model });
+  // Resolved per request, so theme.properties edits show on the next reload
+  const themes = await resolveThemeChain(options.loginThemeDir, options.baseThemesDir, themeType);
+  const result = await options.renderer.render({
+    themes,
+    page,
+    // ?locale= selects the locale; defaults to en until Stories carry their own locale (ticket 04)
+    locale: url.searchParams.get("locale") || "en",
+    model,
+  });
   if (result.ok) return send(res, 200, "text/html; charset=utf-8", result.html);
 
   const { message, template, line, column } = result.error;
