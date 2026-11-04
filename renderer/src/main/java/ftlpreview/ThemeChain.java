@@ -53,6 +53,7 @@ final class ThemeChain {
     /**
      * Messages for a locale: each locale in the fallback chain (least specific first),
      * and within a locale each Theme from least to most specific, so the child wins.
+     * Includes a {@code locale_<tag>} label for each of the Theme's locales, as Keycloak adds them.
      */
     Properties messages(Locale locale) {
         Properties merged = new Properties();
@@ -61,8 +62,10 @@ final class ThemeChain {
                 load(root.resolve("messages/messages_" + bundleSuffix(l) + ".properties"), merged);
             }
         }
+        LocaleTranslations.add(locale, properties().getProperty("locales", ""), merged);
         return merged;
     }
+
 
     /** en, then e.g. de, then de_CH (mirrors Keycloak LocaleUtil.getParentLocale, without realm default). */
     static List<Locale> fallbackChain(Locale locale) {

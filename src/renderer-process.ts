@@ -8,6 +8,8 @@ export interface RenderRequest {
   /** The Theme's name as Keycloak would know it, for the resource URLs. */
   themeName: string;
   page: string;
+  /** The Story's URL, which the locale switcher links to with ?locale=. */
+  storyUrl: string;
   locale: string;
   model: Record<string, unknown>;
   /** Strict mode: a missing Mock model value fails the render. false (lenient): it is skipped and reported as a warning. */

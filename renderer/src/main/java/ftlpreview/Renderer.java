@@ -46,6 +46,10 @@ final class Renderer {
         model.put("pageId", request.page().replaceFirst("\\.ftl$", ""));
         model.putIfAbsent("darkMode", "true".equals(properties.getProperty("darkMode")));
         model.putIfAbsent("title", title(model, msg));
+        // Keycloak FreeMarkerLoginFormsProvider: the locale bean only when the realm has internationalization enabled
+        if (model.get("realm") instanceof Map<?, ?> realm && Boolean.TRUE.equals(realm.get("internationalizationEnabled"))) {
+            model.put("locale", new LocaleBean(supportedLocales(realm), locale, request.storyUrl(), messages));
+        }
         model.put("url", urlBean(model.get("url"), request.themeType(), request.themeName(), properties));
 
         List<String> warnings = new ArrayList<>();
@@ -105,6 +109,11 @@ final class Renderer {
         String common = properties.getProperty("common");
         url.put("resourcesCommonPath", THEME_ROOT + "/" + (common == null || common.isEmpty() ? "common/keycloak" : common));
         return url;
+    }
+
+    /** The realm's supported locales from the Mock model; none when it lists none. */
+    private static List<String> supportedLocales(Map<?, ?> realm) {
+        return realm.get("supportedLocales") instanceof List<?> list ? list.stream().map(String::valueOf).toList() : List.of();
     }
 
     /** Keycloak: title = msg("loginTitle", realm.displayName). */

@@ -51,6 +51,7 @@ export async function renderStory(project: Project, renderer: RendererProcess, r
     themeType,
     themeName: chain.themeName,
     page,
+    storyUrl: project.storyUrl(page, story.name),
     locale: request.locale || story.locale || "en",
     model: applyOverrides(defaults, story.model),
     strict: request.strict,
