@@ -1,0 +1,4 @@
+{
+  "description": "Keycloak version these default Mock models were taken from. Other minors of this major use them with a warning.",
+  "keycloakVersion": "26.8.1"
+}

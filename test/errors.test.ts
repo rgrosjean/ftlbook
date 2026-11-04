@@ -1,17 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { startServer, fixture } from "./harness.ts";
-
-/** A writable copy of a fixture project, removed after the test. */
-async function copyProject(t: { after: (fn: () => Promise<void>) => void }, name: string): Promise<string> {
-  const project = await mkdtemp(path.join(os.tmpdir(), "ftl-preview-project-"));
-  t.after(() => rm(project, { recursive: true, force: true }));
-  await cp(fixture(name), project, { recursive: true });
-  return project;
-}
+import { startServer, fixture, copyProject } from "./harness.ts";
 
 test("a Page with an FTL syntax error shows an error overlay naming the file and line", async (t) => {
   const project = await copyProject(t, "story-project");

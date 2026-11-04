@@ -18,6 +18,8 @@ export interface PreviewServerOptions {
   storiesDir: string;
   /** Strict mode (default): a missing Mock model value fails the render. Lenient: the failing part is skipped. */
   strict: boolean;
+  /** Keycloak major whose default Mock models are used (see selectMockModels). */
+  mockModelsMajor: number;
   port: number;
 }
 
@@ -64,7 +66,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, optio
   }
   if (themeType !== "login") return send(res, 404, "text/plain; charset=utf-8", `Unsupported Theme type: ${themeType}`);
 
-  const defaults = await defaultMockModel(themeType, page);
+  const defaults = await defaultMockModel(options.mockModelsMajor, themeType, page);
   if (!defaults) return send(res, 404, "text/plain; charset=utf-8", `No default Mock model for Page: ${page}`);
 
   let story;

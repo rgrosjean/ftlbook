@@ -1,4 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
@@ -11,6 +13,30 @@ export const testCacheDir = path.join(repoRoot, ".cache", "test");
 
 export function fixture(name: string): string {
   return path.join(repoRoot, "test", "fixtures", name);
+}
+
+/** The part of a node:test context the helpers below need. */
+type TestContext = { after: (fn: () => Promise<void>) => void };
+
+/** A new empty temporary directory, removed after the test. */
+export async function tempDir(t: TestContext, prefix: string): Promise<string> {
+  const dir = await mkdtemp(path.join(os.tmpdir(), `ftl-preview-${prefix}-`));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  return dir;
+}
+
+/** A writable copy of a fixture project, removed after the test. */
+export async function copyProject(t: TestContext, name: string): Promise<string> {
+  const project = await tempDir(t, "project");
+  await cp(fixture(name), project, { recursive: true });
+  return project;
+}
+
+/** Merges settings into the project's ftl-preview.json. */
+export async function configure(project: string, settings: Record<string, unknown>) {
+  const file = path.join(project, "ftl-preview.json");
+  const current = JSON.parse(await readFile(file, "utf8").catch(() => "{}"));
+  await writeFile(file, JSON.stringify({ ...current, ...settings }));
 }
 
 export interface RunningServer {

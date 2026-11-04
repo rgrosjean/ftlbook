@@ -4,6 +4,7 @@ import { startRenderer } from "./renderer-process.ts";
 import { startPreviewServer } from "./preview-server.ts";
 import { CONFIG_FILE, CONFIG_KEYS, loadConfig } from "./config.ts";
 import { checkJava } from "./environment.ts";
+import { selectMockModels } from "./mock-models.ts";
 
 const USAGE = `Usage: ftl-preview <command>
 
@@ -35,6 +36,9 @@ async function serve(args: string[]) {
   const log = (msg: string) => console.log(msg);
   const baseThemesDir = await ensureBaseThemes(config.keycloakVersion, config.mavenRepository, log);
 
+  const mockModels = await selectMockModels(config.keycloakVersion);
+  if (mockModels.warning) console.warn(mockModels.warning);
+
   const renderer = await startRenderer();
   const server = await startPreviewServer({
     renderer,
@@ -42,6 +46,7 @@ async function serve(args: string[]) {
     baseThemesDir,
     storiesDir: config.storiesDir,
     strict: config.strict && !values.lenient,
+    mockModelsMajor: mockModels.major,
     port: values.port === undefined ? config.port : Number(values.port),
   });
 
