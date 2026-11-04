@@ -10,7 +10,8 @@
     "build:renderer": "mvn -q -f renderer/pom.xml package -DskipTests",
     "typecheck": "tsc --noEmit",
     "pretest": "npm run build:renderer",
-    "test": "node --test --test-concurrency=1 \"test/**/*.test.ts\""
+    "test": "node --test --test-concurrency=1 \"test/**/*.test.ts\"",
+    "prepare": "git rev-parse --git-dir >/dev/null 2>&1 && git config core.hooksPath .githooks || true"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

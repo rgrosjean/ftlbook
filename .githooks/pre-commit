@@ -1,0 +1,19 @@
+#!/bin/sh
+# Fast checks before each commit. The full test suite (Maven + JVM) runs in CI.
+# Enabled by `npm install` (the prepare script sets core.hooksPath to .githooks).
+set -e
+
+# Every command entry point named in package.json "bin" must be committed: a parent
+# .gitignore once silently ignored bin/, which broke a fresh checkout.
+node -e '
+  const { execFileSync } = require("node:child_process");
+  const bins = Object.values(require("./package.json").bin ?? {});
+  const tracked = new Set(execFileSync("git", ["ls-files", "--cached", ...bins], { encoding: "utf8" }).split("\n"));
+  const missing = bins.map((b) => b.replace(/^\.\//, "")).filter((b) => !tracked.has(b));
+  if (missing.length) {
+    console.error(`pre-commit: not tracked by git (check .gitignore): ${missing.join(", ")}`);
+    process.exit(1);
+  }
+'
+
+npm run -s typecheck
