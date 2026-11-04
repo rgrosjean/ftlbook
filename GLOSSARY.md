@@ -5,23 +5,27 @@ Tool that renders Keycloak FreeMarker theme pages without a running Keycloak, so
 ## Language
 
 **Project**:
-The customer repository FTL Preview runs in: one Theme (optional), its Story files, and the Keycloak version they target.
+The customer repository FTL Preview runs in: its Themes (optional), the Story files, and the Keycloak version they target.
 _Avoid_: Workspace, repo, app
 
 **Theme**:
-A customer's set of Keycloak templates, messages and resources for one theme type, usually overriding only part of its Base theme.
+A customer's set of Keycloak templates, messages and resources for one Theme type, usually overriding only part of what it builds on. A Project may hold several, e.g. a login Theme and the common Theme it imports.
 _Avoid_: Skin, template set
 
+**Previewed theme**:
+The one Theme of the Project whose Pages FTL Preview renders.
+_Avoid_: Main theme, current theme, the Theme
+
 **Theme type**:
-The Keycloak area a Theme targets: login, account or email.
+The Keycloak area a Theme targets: login, account, email, or common. A common Theme holds only shared resources and is reached through an import.
 _Avoid_: Theme kind, theme category
 
 **Base theme**:
-A Keycloak-provided Theme that a customer Theme builds on, as its parent or as an import, or that renders alone when the Project has no Theme; supplies every file the customer Theme does not override.
+A Keycloak-provided theme that a Theme builds on, as its parent or as an import, or that renders alone when the Project has no Previewed theme; supplies every file the Themes do not override. A Theme of the Project with the same name and type takes its place.
 _Avoid_: Parent theme, default theme
 
 **Theme chain**:
-The Theme followed by every Base theme it builds on, through parents and imports, most specific first. Pages, messages and resources are looked up along it, and the first match wins.
+The Previewed theme followed by every Theme and Base theme it builds on, through parents and imports, most specific first. Pages, messages and resources are looked up along it, and the first match wins.
 _Avoid_: Theme hierarchy, inheritance chain
 
 **Page**:
