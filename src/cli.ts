@@ -33,8 +33,11 @@ async function serve(args: string[]) {
   const themeDirCandidate = path.resolve("theme", "login");
   const loginThemeDir = existsSync(themeDirCandidate) ? themeDirCandidate : undefined;
 
+  // Zero config: Story files live in stories/
+  const storiesDir = path.resolve("stories");
+
   const renderer = await startRenderer();
-  const server = await startPreviewServer({ renderer, loginThemeDir, baseThemesDir, port });
+  const server = await startPreviewServer({ renderer, loginThemeDir, baseThemesDir, storiesDir, port });
 
   const shutdown = async () => {
     await server.close();

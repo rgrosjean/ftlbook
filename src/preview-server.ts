@@ -4,6 +4,7 @@ import type { RendererProcess } from "./renderer-process.ts";
 import { resolveThemeChain } from "./theme-chain.ts";
 import { findResource } from "./resources.ts";
 import path from "node:path";
+import { applyOverrides, findStory, StoryFileError } from "./stories.ts";
 
 export interface PreviewServerOptions {
   renderer: RendererProcess;
@@ -11,6 +12,8 @@ export interface PreviewServerOptions {
   loginThemeDir: string | undefined;
   /** Extracted Base themes of the pinned Keycloak version. */
   baseThemesDir: string;
+  /** Directory with the project's `*.stories.json` files. */
+  storiesDir: string;
   port: number;
 }
 
@@ -47,25 +50,36 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, optio
   const match = PREVIEW_ROUTE.exec(url.pathname);
   if (!match) return send(res, 404, "text/plain; charset=utf-8", "Not found");
 
-  let themeType: string, page: string, story: string;
+  let themeType: string, page: string, storyName: string;
   try {
-    [themeType, page, story] = match.slice(1).map(decodeURIComponent);
+    [themeType, page, storyName] = match.slice(1).map(decodeURIComponent);
   } catch {
     return send(res, 400, "text/plain; charset=utf-8", "Malformed URL");
   }
   if (themeType !== "login") return send(res, 404, "text/plain; charset=utf-8", `Unsupported Theme type: ${themeType}`);
-  if (story !== "Default") return send(res, 404, "text/plain; charset=utf-8", `Unknown Story: ${page}/${story}`);
 
-  const model = await defaultMockModel(themeType, page);
-  if (!model) return send(res, 404, "text/plain; charset=utf-8", `No default Mock model for Page: ${page}`);
+  const defaults = await defaultMockModel(themeType, page);
+  if (!defaults) return send(res, 404, "text/plain; charset=utf-8", `No default Mock model for Page: ${page}`);
+
+  let story;
+  try {
+    // Story files are read on every request, so edits show on the next reload
+    story = await findStory(options.storiesDir, page, storyName);
+  } catch (err) {
+    if (err instanceof StoryFileError) return send(res, 500, "text/plain; charset=utf-8", `Invalid Story file\n\n${err.message}`);
+    throw err;
+  }
+  if (!story) return send(res, 404, "text/plain; charset=utf-8", `Unknown Story: ${page}/${storyName}`);
+
+  const model = applyOverrides(defaults, story.model);
 
   // Resolved per request, so theme.properties edits show on the next reload
   const themes = await resolveThemeChain(options.loginThemeDir, options.baseThemesDir, themeType);
   const result = await options.renderer.render({
     themes,
     page,
-    // ?locale= selects the locale; defaults to en until Stories carry their own locale (ticket 04)
-    locale: url.searchParams.get("locale") || "en",
+    // ?locale= (the preview UI's locale selector) overrides the Story's locale
+    locale: url.searchParams.get("locale") || story.locale || "en",
     model,
   });
   if (result.ok) return send(res, 200, "text/html; charset=utf-8", result.html);

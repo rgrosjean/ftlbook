@@ -1,11 +1,12 @@
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import type { JsonObject } from "./stories.ts";
 
 const MOCK_MODELS_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "mock-models");
 
 /** The default Mock model for a Page, or undefined when the tool ships none. */
-export async function defaultMockModel(themeType: string, page: string): Promise<Record<string, unknown> | undefined> {
+export async function defaultMockModel(themeType: string, page: string): Promise<JsonObject | undefined> {
   if (!/^[\w.-]+\.ftl$/.test(page)) return undefined;
   try {
     return JSON.parse(await readFile(path.join(MOCK_MODELS_DIR, themeType, `${page}.json`), "utf8"));

@@ -1,0 +1,24 @@
+{
+  "page": "login.ftl",
+  "stories": {
+    "WithError": {
+      "model": { "message": { "type": "error", "summary": "Invalid username or password." } }
+    },
+    "RegistrationDisabled": {
+      "model": { "realm": { "registrationAllowed": false } }
+    },
+    "WithProviders": {
+      "model": {
+        "social": {
+          "providers": [{ "alias": "google", "displayName": "Google", "providerId": "google", "loginUrl": "#" }]
+        }
+      }
+    },
+    "WithoutSocial": {
+      "model": { "social": null }
+    },
+    "German": {
+      "locale": "de"
+    }
+  }
+}
