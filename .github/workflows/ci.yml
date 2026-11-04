@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # An older Node for the test that checks the "Node too old" message (test/environment.test.ts);
+      # set up first so the required Node below ends up on the PATH
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+      - run: echo "FTL_PREVIEW_TEST_OLD_NODE=$(which node)" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      # The Renderer needs a JDK 21 and builds with Maven
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+
+      # Keycloak Base theme jars the tests download from Maven Central
+      - uses: actions/cache@v6
+        with:
+          path: .cache/test
+          key: keycloak-base-themes-${{ hashFiles('src/keycloak-themes.ts') }}
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
