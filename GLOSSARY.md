@@ -59,3 +59,11 @@ _Avoid_: Strict rendering, relaxed mode
 **Renderer**:
 The component that runs real FreeMarker on a Page with a Mock model and returns HTML.
 _Avoid_: Engine, compiler
+
+**FTL error**:
+A FreeMarker error in an FTL file of the Theme chain, located by file and line; fixed by changing the Theme or the Story.
+_Avoid_: Template error, render error
+
+**Renderer failure**:
+The Renderer itself failing or out of reach, with no fault in the Project's files.
+_Avoid_: Crash, backend error
