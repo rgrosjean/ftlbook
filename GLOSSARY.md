@@ -41,8 +41,12 @@ The Story every Page has, even without a Story file: its default Mock model with
 _Avoid_: Base story, empty story
 
 **Mock model**:
-The fake Keycloak data (realm, URLs, messages, social providers, ...) a Page is rendered with. Each Page has a default one; a Story overrides parts of it.
+The fake realm and flow data (realm settings, flow URLs, form values, social providers, ...) a Page is rendered with. Each Page has a default one; a Story overrides parts of it.
 _Avoid_: Fixture data, stub context
+
+**Common attributes**:
+The values Keycloak adds to every Page whatever the flow, derived from the Theme, the locale and the realm rather than mocked: messages, theme properties, the language, the locale switcher and the resource URLs. A Story cannot override them.
+_Avoid_: Global model, computed model
 
 **Scaffold**:
 The script that lets a user choose which Pages to add, then creates their Story files.
