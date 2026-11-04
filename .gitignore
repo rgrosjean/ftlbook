@@ -1,5 +1,7 @@
 node_modules/
 renderer/target/
+dist/
+*.tgz
 .cache/
 # The ftl-preview command; a parent .gitignore may ignore bin/
 !/bin/

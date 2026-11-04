@@ -1,16 +1,32 @@
 {
-  "name": "ftl-preview",
+  "name": "@ftl-preview/cli",
   "version": "0.1.0",
-  "private": true,
   "description": "Preview Keycloak FreeMarker login themes without Keycloak",
+  "license": "UNLICENSED",
   "type": "module",
-  "bin": { "ftl-preview": "./bin/ftl-preview.js" },
-  "engines": { "node": ">=22.18" },
+  "bin": {
+    "ftl-preview": "./bin/ftl-preview.js"
+  },
+  "files": [
+    "bin/",
+    "dist/",
+    "renderer/target/ftl-preview-renderer.jar",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22.18"
+  },
+  "publishConfig": {
+    "access": "restricted"
+  },
   "scripts": {
     "build:renderer": "mvn -q -f renderer/pom.xml package -DskipTests",
+    "build": "node scripts/build.js",
     "typecheck": "tsc --noEmit",
     "pretest": "npm run build:renderer",
     "test": "node --test --test-concurrency=1 \"test/**/*.test.ts\"",
+    "prepublishOnly": "node scripts/check-publish-registry.js && npm run typecheck && npm test",
+    "prepack": "npm run build:renderer && npm run build",
     "prepare": "git rev-parse --git-dir >/dev/null 2>&1 && git config core.hooksPath .githooks || true"
   },
   "devDependencies": {
