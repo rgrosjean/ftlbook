@@ -1,0 +1,19 @@
+{
+  "name": "ftl-preview",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Preview Keycloak FreeMarker login themes without Keycloak",
+  "type": "module",
+  "bin": { "ftl-preview": "./src/cli.ts" },
+  "engines": { "node": ">=22.18" },
+  "scripts": {
+    "build:renderer": "mvn -q -f renderer/pom.xml package -DskipTests",
+    "typecheck": "tsc --noEmit",
+    "pretest": "npm run build:renderer",
+    "test": "node --test --test-concurrency=1 \"test/**/*.test.ts\""
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  }
+}

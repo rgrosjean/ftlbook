@@ -1,0 +1,36 @@
+{
+  "realm": {
+    "name": "myrealm",
+    "displayName": "myrealm",
+    "displayNameHtml": "myrealm",
+    "internationalizationEnabled": false,
+    "registrationAllowed": true,
+    "registrationEmailAsUsername": false,
+    "loginWithEmailAllowed": true,
+    "duplicateEmailsAllowed": false,
+    "resetPasswordAllowed": true,
+    "rememberMe": true,
+    "editUsernameAllowed": false,
+    "password": true
+  },
+  "url": {
+    "loginAction": "#",
+    "loginUrl": "#",
+    "loginRestartFlowUrl": "#",
+    "ssoLoginInOtherTabsUrl": "#",
+    "registrationAction": "#",
+    "registrationUrl": "#",
+    "loginResetCredentialsUrl": "#",
+    "resourcesPath": "/resources/login/keycloak.v2",
+    "resourcesCommonPath": "/resources/common/keycloak"
+  },
+  "login": {},
+  "social": { "providers": [] },
+  "auth": {
+    "showUsername": false,
+    "showResetCredentials": false,
+    "showTryAnotherWayLink": false
+  },
+  "messagesPerField": {},
+  "scripts": []
+}
