@@ -1,6 +1,7 @@
 import type { Project } from "./project.ts";
 import type { RenderError, RendererProcess } from "./renderer-process.ts";
 import { applyOverrides, StoryFileError } from "./stories.ts";
+import { DEFAULT_LOCALE } from "./theme-chain.ts";
 
 export interface StoryRequest {
   themeType: string;
@@ -51,9 +52,10 @@ export async function renderStory(project: Project, renderer: RendererProcess, r
     themes: chain.dirs,
     themeType,
     themeName: chain.themeName,
+    properties: await chain.properties(),
     page,
     storyUrl: project.storyUrl(page, story.name),
-    locale: request.locale || story.locale || "en",
+    locale: request.locale || story.locale || DEFAULT_LOCALE,
     model: applyOverrides(defaults, story.model),
     strict: request.strict,
   });

@@ -7,6 +7,8 @@ export interface RenderRequest {
   themeType: string;
   /** The Theme's name as Keycloak would know it, for the resource URLs. */
   themeName: string;
+  /** theme.properties merged over the Theme chain; the Renderer does not read them itself. */
+  properties: Record<string, string>;
   page: string;
   /** The Story's URL, which the locale switcher links to with ?locale=. */
   storyUrl: string;

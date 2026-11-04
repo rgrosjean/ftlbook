@@ -28,9 +28,10 @@ final class Renderer {
 
     RenderResult render(RenderRequest request) throws RenderException {
         ThemeChain chain = ThemeChain.of(request.themes());
-        Locale locale = Locale.forLanguageTag(request.locale() == null ? "en" : request.locale());
-        Properties properties = chain.properties();
-        Properties messages = chain.messages(locale);
+        Locale locale = request.locale() == null ? ThemeChain.DEFAULT_LOCALE : Locale.forLanguageTag(request.locale());
+        Properties properties = new Properties();
+        if (request.properties() != null) properties.putAll(request.properties());
+        Properties messages = chain.messages(locale, properties.getProperty("locales", ""));
 
         Map<String, Object> model = new HashMap<>(request.model() == null ? Map.of() : request.model());
         // Common attributes: Story files may not set these (keep COMMON_ATTRIBUTES in src/stories.ts in step)

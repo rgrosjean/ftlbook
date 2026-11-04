@@ -5,6 +5,7 @@ import { StoryFileError } from "./stories.ts";
 import { renderStory } from "./render-story.ts";
 import { errorOverlay } from "./error-overlay.ts";
 import { previewUi } from "./preview-ui.ts";
+import { DEFAULT_LOCALE } from "./theme-chain.ts";
 
 export interface PreviewServerOptions {
   project: Project;
@@ -90,7 +91,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, optio
 
 /** The UI page; problems with Story files or the Theme are shown in its sidebar rather than failing it. */
 async function serveUi(res: http.ServerResponse, options: PreviewServerOptions) {
-  let locales = ["en"];
+  let locales = [DEFAULT_LOCALE];
   try {
     locales = await (await options.project.themeChain()).locales();
     const pages = await options.project.storyIndex();

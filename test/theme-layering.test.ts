@@ -1,9 +1,11 @@
 import { test, before, after, describe } from "node:test";
 import assert from "node:assert/strict";
-import { startServer, fixture, type RunningServer } from "./harness.ts";
+import { writeFile } from "node:fs/promises";
+import path from "node:path";
+import { copyProject, startServer, fixture, type RunningServer } from "./harness.ts";
 
-async function get(server: RunningServer, path: string) {
-  const res = await fetch(`${server.baseUrl}${path}`);
+async function get(server: RunningServer, urlPath: string) {
+  const res = await fetch(`${server.baseUrl}${urlPath}`);
   const html = await res.text();
   assert.equal(res.status, 200, html);
   return html;
@@ -71,4 +73,36 @@ describe("a Theme that overrides only template.ftl", () => {
     // The Base theme's own layout is not used
     assert.doesNotMatch(html, /id="kc-page-title"/);
   });
+});
+
+test("theme.properties is read like Java's Properties: escapes, escaped separators and continued lines", async (t) => {
+  const project = await copyProject(t, "overriding-theme");
+  const themeDir = path.join(project, "theme", "login");
+  await writeFile(
+    path.join(themeDir, "theme.properties"),
+    [
+      "parent=keycloak.v2",
+      "! a comment",
+      "kcFormClass = acme\\u002Dform caf\\u00e9",
+      "kc\\=odd\\:key\\ name : tab\\there",
+      "locales=d\\u0065,\\",
+      "    f\\u0072",
+      "",
+    ].join("\n"),
+  );
+  await writeFile(
+    path.join(themeDir, "login.ftl"),
+    '<p id="form-class">${properties.kcFormClass}</p><p id="odd">${properties["kc=odd:key name"]}</p>\n',
+  );
+  const server = await startServer(project);
+  t.after(() => server.stop());
+
+  const page = await get(server, "/preview/login/login.ftl/Default");
+  assert.match(page, /<p id="form-class">acme-form café<\/p>/);
+  assert.match(page, /<p id="odd">tab\there<\/p>/);
+
+  const ui = await get(server, "/");
+  const select = /<select[^>]+id="locale"[^>]*>([\s\S]*?)<\/select>/.exec(ui);
+  assert.ok(select, "expected a locale selector");
+  assert.deepEqual([...select[1].matchAll(/<option value="([^"]*)"/g)].map((m) => m[1]), ["", "de", "fr"]);
 });

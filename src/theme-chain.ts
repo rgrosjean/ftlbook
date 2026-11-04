@@ -2,6 +2,9 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { findResource, type Resource } from "./resources.ts";
 
+/** The locale Keycloak falls back to when nothing else names one, and the Theme's only locale when it lists none. */
+export const DEFAULT_LOCALE = "en";
+
 /** Base theme Keycloak renders login with when no customer Theme is given (LOGIN_V2 feature on). */
 export const FALLBACK_LOGIN_BASE_THEME = "keycloak.v2";
 
@@ -25,7 +28,9 @@ export interface ThemeChain {
   pages(): Promise<ThemePage[]>;
   /** A resource below `resources/` of the first Theme in the chain that has it. */
   findResource(resourcePath: string): Promise<Resource | undefined>;
-  /** Locales the Theme supports: theme.properties `locales` over the chain (en when none are listed). */
+  /** theme.properties merged over the chain, so the most specific Theme wins (like Keycloak). */
+  properties(): Promise<Record<string, string>>;
+  /** Locales the Theme supports: theme.properties `locales` over the chain (DEFAULT_LOCALE when none are listed). */
   locales(): Promise<string[]>;
 }
 
@@ -84,7 +89,8 @@ export async function resolveThemeChain(
     themeName: themeDir ? path.basename(path.dirname(path.resolve(themeDir))) : FALLBACK_LOGIN_BASE_THEME,
     pages: () => listPages(chain),
     findResource: (resourcePath) => findResource(dirs, resourcePath),
-    locales: () => themeLocales(dirs),
+    properties: () => mergedThemeProperties(dirs),
+    locales: async () => themeLocales(await mergedThemeProperties(dirs)),
   };
 }
 
@@ -136,41 +142,107 @@ async function listPages(chain: ChainEntry[]): Promise<ThemePage[]> {
 
 /** theme.properties merged over the chain, least specific first, so the child wins (like Keycloak). */
 async function mergedThemeProperties(dirs: string[]): Promise<Record<string, string>> {
-  const merged: Record<string, string> = {};
-  for (const dir of [...dirs].reverse()) Object.assign(merged, await readThemeProperties(dir));
-  return merged;
+  // A Map, so a key such as __proto__ is kept like any other (Object.fromEntries defines own properties)
+  const merged = new Map<string, string>();
+  for (const dir of [...dirs].reverse()) {
+    for (const [key, value] of Object.entries(await readThemeProperties(dir))) merged.set(key, value);
+  }
+  return Object.fromEntries(merged);
 }
 
-async function themeLocales(dirs: string[]): Promise<string[]> {
-  const listed = (await mergedThemeProperties(dirs)).locales ?? "";
-  const locales = listed.split(",").map((l) => l.trim()).filter(Boolean);
-  return locales.length > 0 ? locales : ["en"];
+function themeLocales(properties: Record<string, string>): string[] {
+  const locales = (properties.locales ?? "").split(",").map((l) => l.trim()).filter(Boolean);
+  return locales.length > 0 ? locales : [DEFAULT_LOCALE];
 }
 
 async function readThemeProperties(dir: string): Promise<Record<string, string>> {
   try {
-    return parseProperties(await readFile(path.join(dir, "theme.properties"), "utf8"));
+    const file = path.join(dir, "theme.properties");
+    return parseProperties(decode(await readFile(file)), file);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return {};
     throw err;
   }
 }
 
-/** Minimal java.util.Properties reader: comments, `=`/`:`/space separators, line continuations. */
-function parseProperties(text: string): Record<string, string> {
-  const result: Record<string, string> = {};
-  const lines = text.split(/\r?\n/);
-  for (let i = 0; i < lines.length; i++) {
-    let line = lines[i].trimStart();
-    if (!line || line.startsWith("#") || line.startsWith("!")) continue;
-    while (/(^|[^\\])(\\\\)*\\$/.test(line) && i + 1 < lines.length) {
-      line = line.slice(0, -1) + lines[++i].trimStart();
-    }
-    const match = /^((?:\\.|[^=:\s\\])+)\s*[=:\s]\s*(.*)$/.exec(line);
-    if (match) result[match[1]] = match[2].trim();
-    else result[line] = "";
+/**
+ * UTF-8, falling back to ISO-8859-1 for files that are not valid UTF-8: the reading the Renderer used for
+ * theme.properties (Java's PropertyResourceBundle) before Node became its only reader. Like Java, a byte order
+ * mark is kept, as part of the first key.
+ */
+function decode(bytes: Buffer): string {
+  try {
+    return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
+  } catch {
+    return bytes.toString("latin1");
   }
-  return result;
+}
+
+/**
+ * theme.properties as java.util.Properties reads it, which is what Keycloak loads it into: `#`/`!` comment lines, keys ending
+ * at an unescaped `=`, `:` or whitespace, lines continued by an odd number of trailing backslashes, and the
+ * escapes `\\uXXXX`, `\\t`, `\\n`, `\\r`, `\\f` and `\\<char>` in keys and values. Like Java, trailing
+ * whitespace stays part of the value.
+ */
+function parseProperties(text: string, file: string): Record<string, string> {
+  const result = new Map<string, string>();
+  for (const line of logicalLines(text)) {
+    let keyEnd = 0;
+    while (keyEnd < line.length && !isSeparator(line[keyEnd]) && !isWhitespace(line[keyEnd])) {
+      keyEnd += line[keyEnd] === "\\" ? 2 : 1;
+    }
+    keyEnd = Math.min(keyEnd, line.length);
+    let valueStart = keyEnd;
+    while (valueStart < line.length && isWhitespace(line[valueStart])) valueStart++;
+    if (valueStart < line.length && isSeparator(line[valueStart])) valueStart++;
+    while (valueStart < line.length && isWhitespace(line[valueStart])) valueStart++;
+    result.set(unescape(line.slice(0, keyEnd), file), unescape(line.slice(valueStart), file));
+  }
+  return Object.fromEntries(result);
+}
+
+/** Non-blank, non-comment lines with continuations joined; leading whitespace of each natural line dropped. */
+function* logicalLines(text: string): Generator<string> {
+  const lines = text.split(/\r\n|\r|\n/);
+  for (let i = 0; i < lines.length; i++) {
+    let line = trimLeadingWhitespace(lines[i]);
+    if (!line || line.startsWith("#") || line.startsWith("!")) continue;
+    while (endsWithContinuation(line)) {
+      line = line.slice(0, -1) + (i + 1 < lines.length ? trimLeadingWhitespace(lines[++i]) : "");
+    }
+    yield line;
+  }
+}
+
+function endsWithContinuation(line: string): boolean {
+  let backslashes = 0;
+  while (backslashes < line.length && line[line.length - 1 - backslashes] === "\\") backslashes++;
+  return backslashes % 2 === 1;
+}
+
+const ESCAPES: Record<string, string> = { t: "\t", n: "\n", r: "\r", f: "\f" };
+
+function unescape(text: string, file: string): string {
+  return text.replace(/\\(u(.{0,4})|.)/gs, (_, escape: string, hex: string | undefined) => {
+    if (hex === undefined) return ESCAPES[escape] ?? escape;
+    if (!/^[0-9a-fA-F]{4}$/.test(hex)) throw new Error(`${file}: malformed \\uXXXX escape "\\u${hex}"`);
+    return String.fromCharCode(parseInt(hex, 16));
+  });
+}
+
+function isSeparator(c: string): boolean {
+  return c === "=" || c === ":";
+}
+
+/** Whitespace as java.util.Properties knows it: space, tab and form feed. */
+function isWhitespace(c: string): boolean {
+  return c === " " || c === "\t" || c === "\f";
+}
+
+function trimLeadingWhitespace(line: string): string {
+  let start = 0;
+  while (start < line.length && isWhitespace(line[start])) start++;
+  return line.slice(start);
 }
 
 async function isDirectory(dir: string): Promise<boolean> {

@@ -16,9 +16,13 @@ import java.util.PropertyResourceBundle;
 /**
  * The ordered Theme directories a Page is resolved against, most specific first
  * (mirrors Keycloak's ExtendingTheme: theme, its import, its parent, ...).
- * Every lookup reads from disk, so edits show on the next render.
+ * Every lookup reads from disk, so edits show on the next render. theme.properties is read on the Node side,
+ * which sends it merged in the render request.
  */
 final class ThemeChain {
+    /** The locale every message lookup falls back to last, and the one rendered when the request names none. */
+    static final Locale DEFAULT_LOCALE = Locale.ENGLISH;
+
     private final List<Path> roots;
 
     private ThemeChain(List<Path> roots) {
@@ -41,33 +45,25 @@ final class ThemeChain {
         return Optional.empty();
     }
 
-    /** theme.properties merged from least to most specific Theme, so the child wins. */
-    Properties properties() {
-        Properties merged = new Properties();
-        for (Path root : reversed()) {
-            load(root.resolve("theme.properties"), merged);
-        }
-        return merged;
-    }
-
     /**
      * Messages for a locale: each locale in the fallback chain (least specific first),
      * and within a locale each Theme from least to most specific, so the child wins.
-     * Includes a {@code locale_<tag>} label for each of the Theme's locales, as Keycloak adds them.
+     * Includes a {@code locale_<tag>} label for each of the Theme's locales (the {@code locales} theme
+     * property, comma-separated), as Keycloak adds them.
      */
-    Properties messages(Locale locale) {
+    Properties messages(Locale locale, String themeLocales) {
         Properties merged = new Properties();
         for (Locale l : fallbackChain(locale)) {
             for (Path root : reversed()) {
                 load(root.resolve("messages/messages_" + bundleSuffix(l) + ".properties"), merged);
             }
         }
-        LocaleTranslations.add(locale, properties().getProperty("locales", ""), merged);
+        LocaleTranslations.add(locale, themeLocales, merged);
         return merged;
     }
 
 
-    /** en, then e.g. de, then de_CH (mirrors Keycloak LocaleUtil.getParentLocale, without realm default). */
+    /** DEFAULT_LOCALE, then e.g. de, then de_CH (mirrors Keycloak LocaleUtil.getParentLocale, without realm default). */
     static List<Locale> fallbackChain(Locale locale) {
         List<Locale> chain = new ArrayList<>();
         for (Locale l = locale; l != null; l = parent(l)) {
@@ -79,7 +75,7 @@ final class ThemeChain {
     private static Locale parent(Locale l) {
         if (!l.getVariant().isEmpty()) return new Locale.Builder().setLanguage(l.getLanguage()).setRegion(l.getCountry()).build();
         if (!l.getCountry().isEmpty()) return Locale.of(l.getLanguage());
-        if (!l.getLanguage().equals("en")) return Locale.ENGLISH;
+        if (!l.getLanguage().equals(DEFAULT_LOCALE.getLanguage())) return DEFAULT_LOCALE;
         return null;
     }
 
