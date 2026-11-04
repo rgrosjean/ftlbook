@@ -89,6 +89,10 @@ function parseStoryFile(file: string, text: string): Story[] {
     }
     if (locale !== undefined && typeof locale !== "string") return fail(`Story "${name}": "locale" must be a string`);
     if (!isObject(model)) return fail(`Story "${name}": "model" must be an object`);
+    const commonAttribute = COMMON_ATTRIBUTES.find((attribute) => hasPath(model, attribute));
+    if (commonAttribute) {
+      return fail(`Story "${name}" sets ${commonAttribute}, a Common attribute derived from the Theme, the locale and the realm; change those instead`);
+    }
     return { name, page, locale, model, file };
   });
 }
@@ -129,6 +133,23 @@ export async function addStories(storiesDir: string, pages: string[], name: stri
 /** Where a Page's first Story goes: `<page>.stories.json`, without the `.ftl`. */
 function defaultStoryFilePath(storiesDir: string, page: string): string {
   return path.join(storiesDir, `${page.replace(/\.ftl$/, "")}${STORY_FILE_SUFFIX}`);
+}
+
+/**
+ * Mock model paths the Renderer derives rather than takes from the model (Common attributes): messages, theme
+ * properties, the language, the locale switcher and the resource URLs, as Keycloak's FreeMarkerLoginFormsProvider
+ * adds them. Keep in step with what the Renderer sets in Renderer.render.
+ */
+const COMMON_ATTRIBUTES = ["msg", "advancedMsg", "properties", "lang", "locale", "url.resourcesPath", "url.resourcesCommonPath"];
+
+/** Whether the object has an own key at the dotted path. */
+function hasPath(object: JsonObject, dottedPath: string): boolean {
+  let current: Json = object;
+  for (const key of dottedPath.split(".")) {
+    if (!isObject(current) || !Object.hasOwn(current, key)) return false;
+    current = current[key];
+  }
+  return true;
 }
 
 /**

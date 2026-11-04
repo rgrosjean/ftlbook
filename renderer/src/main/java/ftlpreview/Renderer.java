@@ -33,6 +33,7 @@ final class Renderer {
         Properties messages = chain.messages(locale);
 
         Map<String, Object> model = new HashMap<>(request.model() == null ? Map.of() : request.model());
+        // Common attributes: Story files may not set these (keep COMMON_ATTRIBUTES in src/stories.ts in step)
         model.put("properties", properties);
         TemplateMethodModelEx msg = KeycloakShims.msg(messages, locale);
         model.put("msg", msg);

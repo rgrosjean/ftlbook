@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { cp, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { startServer, fixture, type RunningServer } from "./harness.ts";
+import { copyProject, startServer, fixture, type RunningServer } from "./harness.ts";
 
 function probe(html: string, id: string): string {
   const match = new RegExp(`<li id="${id}">([^<]*)</li>`).exec(html);
@@ -79,6 +79,23 @@ test("Story files are re-read on every request", async (t) => {
   );
   const html = await (await fetch(url)).text();
   assert.equal(probe(html, "realm-name"), "otherrealm");
+});
+
+test("a Story overriding a Common attribute is rejected, naming the file, Story and attribute", async (t) => {
+  const project = await copyProject(t, "story-project");
+  await writeFile(
+    path.join(project, "stories", "moved.stories.json"),
+    JSON.stringify({ page: "login.ftl", stories: { Moved: { model: { url: { resourcesPath: "/elsewhere", loginAction: "/go" } } } } }),
+  );
+  const server = await startServer(project);
+  t.after(() => server.stop());
+
+  const res = await fetch(`${server.baseUrl}/preview/login/login.ftl/Moved`);
+  assert.equal(res.status, 500);
+  assert.match(
+    await res.text(),
+    /moved\.stories\.json: Story &#34;Moved&#34; sets url\.resourcesPath, a Common attribute derived from the Theme, the locale and the realm; change those instead/,
+  );
 });
 
 test("an invalid Story file is reported with its file name", async (t) => {
