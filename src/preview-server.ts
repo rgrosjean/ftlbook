@@ -1,11 +1,12 @@
 import http from "node:http";
 import { defaultMockModel } from "./mock-models.ts";
 import type { RendererProcess } from "./renderer-process.ts";
-import { resolveThemeChain } from "./theme-chain.ts";
+import { resolveThemeChain, themeLocales } from "./theme-chain.ts";
 import { findResource } from "./resources.ts";
 import path from "node:path";
-import { applyOverrides, findStory, StoryFileError } from "./stories.ts";
+import { applyOverrides, findStory, storyIndex, StoryFileError } from "./stories.ts";
 import { errorOverlay } from "./error-overlay.ts";
+import { previewUi } from "./preview-ui.ts";
 
 export interface PreviewServerOptions {
   renderer: RendererProcess;
@@ -48,6 +49,8 @@ export async function startPreviewServer(options: PreviewServerOptions): Promise
 async function handle(req: http.IncomingMessage, res: http.ServerResponse, options: PreviewServerOptions) {
   const url = new URL(req.url ?? "/", "http://localhost");
   if (req.method !== "GET") return send(res, 404, "text/plain; charset=utf-8", "Not found");
+  if (url.pathname === "/") return serveUi(res, options);
+  if (url.pathname === "/api/stories") return serveStoryIndex(res, options);
   const resource = RESOURCES_ROUTE.exec(url.pathname);
   if (resource) return serveResource(res, options, resource[1] as "login" | "common", resource[2], resource[3]);
   const match = PREVIEW_ROUTE.exec(url.pathname);
@@ -94,6 +97,30 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, optio
   }
 
   send(res, 500, "text/html; charset=utf-8", await errorOverlay("Render failed", result.error));
+}
+
+/** The UI page; problems with Story files or the Theme are shown in its sidebar rather than failing it. */
+async function serveUi(res: http.ServerResponse, options: PreviewServerOptions) {
+  let locales = ["en"];
+  try {
+    locales = await themeLocales(await resolveThemeChain(options.loginThemeDir, options.baseThemesDir, "login"));
+    const pages = await storyIndex(options.storiesDir, "login");
+    send(res, 200, "text/html; charset=utf-8", previewUi({ pages, locales }));
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    send(res, 200, "text/html; charset=utf-8", previewUi({ pages: [], locales, storyError: message }));
+  }
+}
+
+/** The Page/Story list the preview UI shows (v1 supports the login Theme type only). */
+async function serveStoryIndex(res: http.ServerResponse, options: PreviewServerOptions) {
+  try {
+    const pages = await storyIndex(options.storiesDir, "login");
+    send(res, 200, "application/json; charset=utf-8", JSON.stringify({ pages }));
+  } catch (err) {
+    if (!(err instanceof StoryFileError)) throw err;
+    send(res, 500, "application/json; charset=utf-8", JSON.stringify({ error: err.message }));
+  }
 }
 
 /**

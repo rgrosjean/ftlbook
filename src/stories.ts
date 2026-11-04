@@ -121,3 +121,33 @@ function setOwn(target: JsonObject, key: string, value: Json) {
 function isObject(value: unknown): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
+
+/** One Page in the Story index, with its Stories in display order. */
+export interface IndexedPage {
+  themeType: string;
+  page: string;
+  stories: { name: string; url: string }[];
+}
+
+/** The stable URL of a Story: /preview/<theme-type>/<page>/<story>. */
+export function storyUrl(themeType: string, page: string, name: string): string {
+  return `/preview/${[themeType, page, name].map(encodeURIComponent).join("/")}`;
+}
+
+/**
+ * Every Page that has a Story file, sorted by Page, with the Default Story first (defined or implicit)
+ * and the other Stories in definition order.
+ */
+export async function storyIndex(storiesDir: string, themeType: string): Promise<IndexedPage[]> {
+  const byPage = new Map<string, string[]>();
+  for (const story of await loadStories(storiesDir)) {
+    const names = byPage.get(story.page) ?? [];
+    if (story.name !== DEFAULT_STORY) names.push(story.name);
+    byPage.set(story.page, names);
+  }
+  return [...byPage.keys()].sort().map((page) => ({
+    themeType,
+    page,
+    stories: [DEFAULT_STORY, ...byPage.get(page)!].map((name) => ({ name, url: storyUrl(themeType, page, name) })),
+  }));
+}

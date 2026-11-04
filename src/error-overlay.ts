@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import type { RenderError } from "./renderer-process.ts";
+import { escapeHtml } from "./html.ts";
 
 /** An error to show; location fields are optional (e.g. an invalid Story file has none). */
 export type LocatedError = Pick<RenderError, "message"> & Partial<Omit<RenderError, "message">>;
@@ -58,8 +59,4 @@ async function sourceExcerpt(file: string | null | undefined, line: number | nul
     rows.push(`<span class="${cls}"><span class="no">${n}</span>${escapeHtml(lines[n - 1])}</span>`);
   }
   return `<pre class="excerpt">${rows.join("")}</pre>`;
-}
-
-function escapeHtml(text: string): string {
-  return text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 }

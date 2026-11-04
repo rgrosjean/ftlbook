@@ -49,6 +49,20 @@ export async function resolveThemeChain(
   return chain;
 }
 
+/** theme.properties merged over the chain, least specific first, so the child wins (like Keycloak). */
+export async function mergedThemeProperties(chain: string[]): Promise<Record<string, string>> {
+  const merged: Record<string, string> = {};
+  for (const dir of [...chain].reverse()) Object.assign(merged, await readThemeProperties(dir));
+  return merged;
+}
+
+/** Locales the Theme supports: theme.properties `locales` over the chain (en when none are listed). */
+export async function themeLocales(chain: string[]): Promise<string[]> {
+  const listed = (await mergedThemeProperties(chain)).locales ?? "";
+  const locales = listed.split(",").map((l) => l.trim()).filter(Boolean);
+  return locales.length > 0 ? locales : ["en"];
+}
+
 async function readThemeProperties(dir: string): Promise<Record<string, string>> {
   try {
     return parseProperties(await readFile(path.join(dir, "theme.properties"), "utf8"));
