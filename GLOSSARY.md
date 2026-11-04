@@ -4,6 +4,10 @@ Tool that renders Keycloak FreeMarker theme pages without a running Keycloak, so
 
 ## Language
 
+**Project**:
+The customer repository FTL Preview runs in: one Theme (optional), its Story files, and the Keycloak version they target.
+_Avoid_: Workspace, repo, app
+
 **Theme**:
 A customer's set of Keycloak templates, messages and resources for one theme type, usually overriding only part of its Base theme.
 _Avoid_: Skin, template set
@@ -13,8 +17,12 @@ The Keycloak area a Theme targets: login, account or email.
 _Avoid_: Theme kind, theme category
 
 **Base theme**:
-The Keycloak-provided Theme a customer Theme inherits from via its parent setting; supplies every file the customer Theme does not override.
+A Keycloak-provided Theme that a customer Theme builds on, as its parent or as an import, or that renders alone when the Project has no Theme; supplies every file the customer Theme does not override.
 _Avoid_: Parent theme, default theme
+
+**Theme chain**:
+The Theme followed by every Base theme it builds on, through parents and imports, most specific first. Pages, messages and resources are looked up along it, and the first match wins.
+_Avoid_: Theme hierarchy, inheritance chain
 
 **Page**:
 A single Keycloak screen defined by one FTL file, such as `login.ftl` or `register.ftl`.
@@ -23,6 +31,14 @@ _Avoid_: View, screen, template
 **Story**:
 A named preview of one Page, defined as declarative data: which Page, which locale, and the model overrides to apply.
 _Avoid_: Scenario, fixture, case
+
+**Story file**:
+A `*.stories.json` file in the Project defining the Stories of exactly one Page.
+_Avoid_: Stories file, spec
+
+**Default Story**:
+The Story every Page has, even without a Story file: its default Mock model with no overrides. A Story file may define it again to override it.
+_Avoid_: Base story, empty story
 
 **Mock model**:
 The fake Keycloak data (realm, URLs, messages, social providers, ...) a Page is rendered with. Each Page has a default one; a Story overrides parts of it.
