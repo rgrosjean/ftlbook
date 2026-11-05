@@ -15,13 +15,26 @@ export interface ThemePage {
   baseTheme: string | undefined;
 }
 
+/** Theme type of a common theme: one holding only shared resources, reached through an import or the `common` theme property. */
+export const COMMON_THEME_TYPE = "common";
+
+/** Common theme Keycloak uses when the Theme chain sets no `common` theme property. */
+const DEFAULT_COMMON_THEME = `${COMMON_THEME_TYPE}/keycloak`;
+
+/**
+ * A Theme chain or Common theme chain that cannot be built from the Project: a parent or import found nowhere, a parent
+ * cycle, a malformed theme.properties. Fixed by changing the Project, unlike a bug of FTL Preview.
+ */
+export class ThemeChainError extends Error {}
+
 /** Where the preview server serves resources: Keycloak's theme root URL. */
 export const RESOURCES_ROOT = "/resources";
 
 /**
  * The Previewed theme followed by every Theme and Base theme it builds on, most specific first. Each theme.properties of the
- * chain is read once, while the chain is resolved; Pages and resources are read on every call, and so is the chain of the
- * common theme a common resource URL names.
+ * chain is read once, while the chain is resolved, together with the Common theme chain of the common theme the `common`
+ * theme property names. Pages and resources are read on every call, and so is the Common theme chain of any other common
+ * theme a common resource URL names.
  */
 export interface ThemeChain {
   /** Theme directories, most specific first, for the Renderer. */
@@ -41,7 +54,8 @@ export interface ThemeChain {
    * The resource a URL below RESOURCES_ROOT names, as `resourceUrls` build them: Theme resources from the chain
    * (the Theme name in the URL is not checked, as there is one Previewed theme), common resources from the chain of the
    * named common theme (a Theme of the Project, else a Base theme), built like the Theme chain. Undefined for any other URL.
-   * Throws URIError on a malformed escape, and like `resolveThemeChain` when the common chain names a missing theme or has a cycle.
+   * Throws URIError on a malformed escape, and ThemeChainError when the Common theme chain of a common theme other than the
+   * one the `common` theme property names cannot be built.
    */
   findResource(urlPath: string): Promise<Resource | undefined>;
 }
@@ -68,6 +82,9 @@ interface ChainEntry {
  *   undefined to start at the fallback Base theme
  * @param baseThemesDir extracted keycloak-themes jar
  * @param keycloakVersion version of the Base themes, for errors
+ * @throws ThemeChainError when the Theme chain, or the Common theme chain the `common` theme property names, cannot be built.
+ *   Unlike Keycloak, whose DefaultThemeManager.getTheme falls back to the built-in common theme when the named one fails to
+ *   load (logging "Failed to find common theme"), so the preview does not look right while the real Keycloak logs errors.
  */
 export async function resolveThemeChain(
   themeDir: string | undefined,
@@ -91,7 +108,7 @@ export async function resolveThemeChain(
       const where = themesRoot
         ? `neither a Theme of the Project (looked in ${themesRoot}) nor a Base theme of Keycloak ${keycloakVersion}`
         : `not a Base theme of Keycloak ${keycloakVersion}`;
-      throw new Error(`${referencedFrom} refers to "${type}/${name}", which is ${where}`);
+      throw new ThemeChainError(`${referencedFrom} refers to "${type}/${name}", which is ${where}`);
     }
     return { ...found, properties: await readThemeProperties(found.dir) };
   };
@@ -106,6 +123,13 @@ export async function resolveThemeChain(
 
   const dirs = chain.map((entry) => entry.dir);
   const properties = mergedThemeProperties(chain);
+  const commonTheme = namedCommonTheme(chain, properties);
+  // Resolved with the Theme chain, so a broken one fails the Page like a broken Theme chain
+  const commonDirs =
+    commonTheme &&
+    (await followChain(await loadTheme(commonTheme.name, COMMON_THEME_TYPE, `${commonTheme.file} (common)`), COMMON_THEME_TYPE, loadTheme)).map(
+      (entry) => entry.dir,
+    );
   // The Previewed theme's name as Keycloak would know it: its folder's parent (Keycloak's themes/<name>/<type> layout)
   const themeName = previewedDir ? path.basename(path.dirname(previewedDir)) : FALLBACK_LOGIN_BASE_THEME;
   return {
@@ -114,7 +138,7 @@ export async function resolveThemeChain(
     locales: themeLocales(properties),
     resourceUrls: {
       resourcesPath: `${RESOURCES_ROOT}/${themeType}/${themeName}`,
-      resourcesCommonPath: `${RESOURCES_ROOT}/${properties.common || "common/keycloak"}`,
+      resourcesCommonPath: `${RESOURCES_ROOT}/${properties.common || DEFAULT_COMMON_THEME}`,
     },
     pages: () => listPages(chain),
     findResource: async (urlPath) => {
@@ -122,14 +146,30 @@ export async function resolveThemeChain(
       if (!match) return undefined;
       const [type, name, resourcePath] = match.slice(1).map(decodeURIComponent);
       if (type === themeType) return findResource(dirs, resourcePath);
-      if (type !== "common") return undefined;
-      const common = await findTheme(name, "common");
+      if (type !== COMMON_THEME_TYPE) return undefined;
+      if (commonDirs && name === commonTheme.name) return findResource(commonDirs, resourcePath);
+      const common = await findTheme(name, COMMON_THEME_TYPE);
       if (!common) return undefined;
       // Keycloak's ThemeResource serves common resources from the whole chain of that common theme
-      const commonChain = await followChain({ ...common, properties: await readThemeProperties(common.dir) }, "common", loadTheme);
+      const commonChain = await followChain({ ...common, properties: await readThemeProperties(common.dir) }, COMMON_THEME_TYPE, loadTheme);
       return findResource(commonChain.map((entry) => entry.dir), resourcePath);
     },
   };
+}
+
+/**
+ * The common theme the merged `common` theme property names, with the most specific theme.properties that sets it (the one
+ * mergedThemeProperties lets win); undefined when no theme of the chain sets it.
+ */
+function namedCommonTheme(chain: ChainEntry[], properties: Record<string, string>): { name: string; file: string } | undefined {
+  const value = properties.common;
+  if (!value) return undefined;
+  const file = path.join(chain.find((entry) => entry.properties.common === value)!.dir, "theme.properties");
+  const [type, name, ...rest] = value.split("/");
+  if (type !== COMMON_THEME_TYPE || !name || rest.length > 0) {
+    throw new ThemeChainError(`${file}: common must be "${COMMON_THEME_TYPE}/<name>", got "${value}"`);
+  }
+  return { name, file };
 }
 
 /**
@@ -145,7 +185,7 @@ async function followChain(
   const visitedParents = new Set<string>();
   let current: ChainEntry | undefined = start;
   while (current) {
-    if (visitedParents.has(current.dir)) throw new Error(`Theme parent cycle at ${current.dir}`);
+    if (visitedParents.has(current.dir)) throw new ThemeChainError(`Theme parent cycle at ${current.dir}`);
     visitedParents.add(current.dir);
     chain.push(current);
 
@@ -153,7 +193,7 @@ async function followChain(
     const propertiesFile = path.join(current.dir, "theme.properties");
     if (properties.import) {
       const [type, name] = properties.import.split("/", 2);
-      if (!type || !name) throw new Error(`${propertiesFile}: import must be "<type>/<name>", got "${properties.import}"`);
+      if (!type || !name) throw new ThemeChainError(`${propertiesFile}: import must be "<type>/<name>", got "${properties.import}"`);
       const imported = await loadTheme(name, type, `${propertiesFile} (import)`);
       if (!chain.some((entry) => entry.dir === imported.dir)) chain.push(imported);
     }
@@ -287,7 +327,7 @@ const ESCAPES: Record<string, string> = { t: "\t", n: "\n", r: "\r", f: "\f" };
 function unescape(text: string, file: string): string {
   return text.replace(/\\(u(.{0,4})|.)/gs, (_, escape: string, hex: string | undefined) => {
     if (hex === undefined) return ESCAPES[escape] ?? escape;
-    if (!/^[0-9a-fA-F]{4}$/.test(hex)) throw new Error(`${file}: malformed \\uXXXX escape "\\u${hex}"`);
+    if (!/^[0-9a-fA-F]{4}$/.test(hex)) throw new ThemeChainError(`${file}: malformed \\uXXXX escape "\\u${hex}"`);
     return String.fromCharCode(parseInt(hex, 16));
   });
 }

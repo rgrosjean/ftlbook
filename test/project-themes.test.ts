@@ -11,6 +11,36 @@ function linkTo(html: string, fileName: string): string {
   return match[1];
 }
 
+/** Text of an HTML page with its character references decoded, as the developer reads it. */
+function textOf(html: string): string {
+  return html.replace(/&#(\d+);/g, (_, code: string) => String.fromCharCode(Number(code)));
+}
+
+/**
+ * A broken Theme chain or Common theme chain fails everywhere: the Page shows the error overlay, the preview UI shows the error
+ * in its sidebar, and a resource request answers 500 with the error itself, not as an internal error of FTL Preview.
+ */
+async function assertFailsEverywhere(server: RunningServer, expected: RegExp): Promise<string> {
+  const page = await fetch(`${server.baseUrl}/preview/login/login.ftl/Default`);
+  assert.equal(page.status, 500);
+  const overlay = await page.text();
+  assert.match(overlay, /id="ftl-preview-error"/);
+  assert.match(overlay, /<h1>Broken Theme chain<\/h1>/);
+  const message = /<pre class="message">([^<]*)<\/pre>/.exec(overlay)?.[1];
+  assert.ok(message, overlay);
+  assert.match(textOf(message), expected);
+
+  const ui = await fetch(server.baseUrl);
+  assert.equal(ui.status, 200);
+  const sidebarProblem = /<p class="problem">([^<]*)<\/p>/.exec(await ui.text())?.[1];
+  assert.equal(sidebarProblem && textOf(sidebarProblem), textOf(message));
+
+  const resource = await fetch(`${server.baseUrl}/resources/login/acme/css/styles.css`);
+  assert.equal(resource.status, 500);
+  assert.equal(await resource.text(), textOf(message));
+  return textOf(message);
+}
+
 /** The not-found error names the Project's themes root and the Keycloak version of the Base themes. */
 function assertNamesBothPlaces(body: string, project: string) {
   assert.ok(body.includes(`neither a Theme of the Project (looked in ${path.join(project, "themes")})`), body);
@@ -112,11 +142,8 @@ test("a parent found neither among the Themes of the Project nor among the Base 
   const server = await startServer(project);
   t.after(() => server.stop());
 
-  const res = await fetch(`${server.baseUrl}/preview/login/login.ftl/Default`);
-  assert.equal(res.status, 500);
-  const body = await res.text();
-  assert.match(body, /acme-base\/login\/theme\.properties \(parent\) refers to "login\/acme-missing"/);
-  assertNamesBothPlaces(body, project);
+  const message = await assertFailsEverywhere(server, /acme-base\/login\/theme\.properties \(parent\) refers to "login\/acme-missing"/);
+  assertNamesBothPlaces(message, project);
 });
 
 test("a parent of a common Theme found neither among the Themes of the Project nor among the Base themes fails naming both places", async (t) => {
@@ -129,6 +156,7 @@ test("a parent of a common Theme found neither among the Themes of the Project n
   assert.equal(res.status, 500);
   const body = await res.text();
   assert.match(body, /acme\/common\/theme\.properties \(parent\) refers to "common\/acme-missing"/);
+  assert.doesNotMatch(body, /Internal error/);
   assertNamesBothPlaces(body, project);
 });
 
@@ -156,4 +184,87 @@ test("a parent cycle among common Themes fails as in the Theme chain", async (t)
   const res = await fetch(`${server.baseUrl}/resources/common/acme/css/shared.css`);
   assert.equal(res.status, 500);
   assert.match(await res.text(), /Theme parent cycle at .*acme\/common/);
+});
+
+describe("a broken Common theme chain of the common theme the common theme property names", () => {
+  const commonProperties = (project: string) => path.join(project, "themes", "acme", "common", "theme.properties");
+  const setCommon = (project: string, value: string) =>
+    appendFile(path.join(project, "themes", "acme", "login", "theme.properties"), `common=${value}\n`);
+
+  test("a parent found in neither place fails the Page, the preview UI and resource requests", async (t) => {
+    const project = await copyProject(t, "project-themes");
+    await setCommon(project, "common/acme");
+    await writeFile(commonProperties(project), "parent=acme-missing\n");
+    const server = await startServer(project);
+    t.after(() => server.stop());
+
+    const message = await assertFailsEverywhere(server, /acme\/common\/theme\.properties \(parent\) refers to "common\/acme-missing"/);
+    assertNamesBothPlaces(message, project);
+    const common = await fetch(`${server.baseUrl}/resources/common/acme/css/shared.css`);
+    assert.equal(common.status, 500);
+    assert.equal(await common.text(), message);
+  });
+
+  test("an import found in neither place fails the Page", async (t) => {
+    const project = await copyProject(t, "project-themes");
+    await setCommon(project, "common/acme");
+    await writeFile(commonProperties(project), "import=common/acme-missing\n");
+    const server = await startServer(project);
+    t.after(() => server.stop());
+
+    const message = await assertFailsEverywhere(server, /acme\/common\/theme\.properties \(import\) refers to "common\/acme-missing"/);
+    assertNamesBothPlaces(message, project);
+  });
+
+  test("a parent cycle fails the Page", async (t) => {
+    const project = await copyProject(t, "project-themes");
+    await setCommon(project, "common/acme");
+    await writeFile(commonProperties(project), "parent=acme-base\n");
+    await mkdir(path.join(project, "themes", "acme-base", "common"));
+    await writeFile(path.join(project, "themes", "acme-base", "common", "theme.properties"), "parent=acme\n");
+    const server = await startServer(project);
+    t.after(() => server.stop());
+
+    await assertFailsEverywhere(server, /^Theme parent cycle at .*acme\/common$/);
+  });
+
+  test("a common theme found in neither place fails the Page, naming the most specific theme.properties that sets it", async (t) => {
+    const project = await copyProject(t, "project-themes");
+    await appendFile(path.join(project, "themes", "acme-base", "login", "theme.properties"), "common=common/acme-missing\n");
+    const server = await startServer(project);
+    t.after(() => server.stop());
+
+    const message = await assertFailsEverywhere(server, /refers to "common\/acme-missing"/);
+    const file = path.join(project, "themes", "acme-base", "login", "theme.properties");
+    assert.ok(message.startsWith(`${file} (common) refers to "common/acme-missing", which is neither a Theme of the Project`), message);
+    assertNamesBothPlaces(message, project);
+  });
+
+  for (const value of ["acme", "login/acme", "common/acme/extra", "common/"]) {
+    test(`common=${value} fails the Page as not common/<name>`, async (t) => {
+      const project = await copyProject(t, "project-themes");
+      await setCommon(project, value);
+      const server = await startServer(project);
+      t.after(() => server.stop());
+
+      const file = path.join(project, "themes", "acme", "login", "theme.properties");
+      const message = await assertFailsEverywhere(server, /common must be/);
+      assert.equal(message, `${file}: common must be "common/<name>", got "${value}"`);
+    });
+  }
+
+  test("common=common/keycloak renders the Page and serves keycloak/common's resources", async (t) => {
+    const project = await copyProject(t, "project-themes");
+    await setCommon(project, "common/keycloak");
+    const server = await startServer(project);
+    t.after(() => server.stop());
+
+    const page = await fetch(`${server.baseUrl}/preview/login/login.ftl/Default`);
+    const html = await page.text();
+    assert.equal(page.status, 200, html);
+    assert.match(html, /"\/resources\/common\/keycloak\/vendor\/rfc4648\/rfc4648\.js"/);
+    const script = await fetch(`${server.baseUrl}/resources/common/keycloak/vendor/rfc4648/rfc4648.js`);
+    assert.equal(script.status, 200);
+    assert.match(await script.text(), /var base16Encoding = \{/);
+  });
 });

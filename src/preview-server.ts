@@ -5,7 +5,7 @@ import { StoryFileError } from "./stories.ts";
 import { renderStory } from "./render-story.ts";
 import { errorOverlay } from "./error-overlay.ts";
 import { previewUi } from "./preview-ui.ts";
-import { DEFAULT_LOCALE, RESOURCES_ROOT } from "./theme-chain.ts";
+import { DEFAULT_LOCALE, RESOURCES_ROOT, ThemeChainError } from "./theme-chain.ts";
 import { errorMessage } from "./errors.ts";
 
 export interface PreviewServerOptions {
@@ -69,6 +69,8 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, optio
       return send(res, 404, "text/plain; charset=utf-8", `No default Mock model for Page: ${outcome.page}`);
     case "invalid-story-file":
       return send(res, 500, "text/html; charset=utf-8", await errorOverlay("Invalid Story file", { message: outcome.message }));
+    case "broken-theme-chain":
+      return send(res, 500, "text/html; charset=utf-8", await errorOverlay("Broken Theme chain", { message: outcome.message }));
     case "unknown-story":
       return send(res, 404, "text/plain; charset=utf-8", `Unknown Story: ${outcome.page}/${outcome.storyName}`);
     case "ftl-error":
@@ -111,6 +113,8 @@ async function serveResource(res: http.ServerResponse, options: PreviewServerOpt
   try {
     found = await (await options.project.themeChain()).findResource(urlPath);
   } catch (err) {
+    // An error of the Project, not of FTL Preview, so without the "Internal error" prefix
+    if (err instanceof ThemeChainError) return send(res, 500, "text/plain; charset=utf-8", err.message);
     if (!(err instanceof URIError)) throw err;
     return send(res, 400, "text/plain; charset=utf-8", "Malformed URL");
   }

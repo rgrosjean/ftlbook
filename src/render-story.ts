@@ -1,7 +1,7 @@
 import type { Project } from "./project.ts";
 import type { RenderOutcome, RendererProcess } from "./renderer-process.ts";
 import { applyOverrides, StoryFileError } from "./stories.ts";
-import { DEFAULT_LOCALE } from "./theme-chain.ts";
+import { DEFAULT_LOCALE, ThemeChainError } from "./theme-chain.ts";
 
 export interface StoryRequest {
   themeType: string;
@@ -18,6 +18,7 @@ export type StoryOutcome =
   | { kind: "unsupported-theme-type"; themeType: string; supported: string }
   | { kind: "no-default-mock-model"; page: string }
   | { kind: "invalid-story-file"; message: string }
+  | { kind: "broken-theme-chain"; message: string }
   | { kind: "unknown-story"; page: string; storyName: string }
   | RenderOutcome;
 
@@ -44,7 +45,13 @@ export async function renderStory(project: Project, renderer: RendererProcess, r
   }
   if (!story) return { kind: "unknown-story", page, storyName: request.storyName };
 
-  const chain = await project.themeChain();
+  let chain;
+  try {
+    chain = await project.themeChain();
+  } catch (err) {
+    if (err instanceof ThemeChainError) return { kind: "broken-theme-chain", message: err.message };
+    throw err;
+  }
   return renderer.render({
     theme: { dirs: chain.dirs, properties: chain.properties, ...chain.resourceUrls },
     page,
