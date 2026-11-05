@@ -1,6 +1,6 @@
 {
   "name": "@ftl-preview/cli",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Preview Keycloak FreeMarker login themes without Keycloak",
   "license": "UNLICENSED",
   "type": "module",
