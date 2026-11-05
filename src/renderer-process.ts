@@ -1,4 +1,5 @@
 import { REQUIRED_JAVA_MAJOR, spawnRenderer } from "./java.ts";
+import { errorMessage } from "./errors.ts";
 
 /** What the Renderer needs of the Theme chain. */
 export interface RenderTheme {
@@ -23,7 +24,8 @@ export interface RenderRequest {
   strict: boolean;
 }
 
-export interface RenderError {
+/** An FTL error, located by file and line. */
+export interface FtlError {
   message: string;
   template: string | null;
   /** The template's file on disk, resolved through the Theme chain. */
@@ -33,17 +35,17 @@ export interface RenderError {
 }
 
 /**
- * On success, `warnings` lists template errors skipped in lenient mode (always empty when strict). A located
- * `error` is a template error; a `rendererFailure` is the Renderer itself failing (an error response, or a
- * Renderer that stopped and could not be restarted).
+ * How a render ended. `rendered`: `warnings` lists template errors skipped in lenient mode (always empty when
+ * strict). `ftl-error`: an FTL error in the Theme chain. `renderer-failure`: the Renderer itself failing (an error
+ * response, or a Renderer that stopped and could not be restarted).
  */
-export type RenderResult =
-  | { ok: true; html: string; warnings: string[] }
-  | { ok: false; error: RenderError }
-  | { ok: false; rendererFailure: string };
+export type RenderOutcome =
+  | { kind: "rendered"; html: string; warnings: string[] }
+  | { kind: "ftl-error"; error: FtlError }
+  | { kind: "renderer-failure"; message: string };
 
 export interface RendererProcess {
-  render(request: RenderRequest): Promise<RenderResult>;
+  render(request: RenderRequest): Promise<RenderOutcome>;
   stop(): void;
 }
 
@@ -55,7 +57,7 @@ export async function startRenderer(): Promise<RendererProcess> {
   let current = launch();
   await current;
   let stopped = false;
-  const failure = (message: string): RenderResult => ({ ok: false, rendererFailure: message });
+  const failure = (message: string): RenderOutcome => ({ kind: "renderer-failure", message });
 
   /** The running Renderer, started anew if it died; concurrent renders share one restart. */
   async function running() {
@@ -86,9 +88,9 @@ export async function startRenderer(): Promise<RendererProcess> {
           if (typeof body?.html !== "string") {
             return failure('Unexpected Renderer response; rebuild it with "npm run build:renderer".');
           }
-          return { ok: true, html: body.html, warnings: body.warnings ?? [] };
+          return { kind: "rendered", html: body.html, warnings: body.warnings ?? [] };
         }
-        if (res.status === 422) return { ok: false, error: ((await res.json()) as { error: RenderError }).error };
+        if (res.status === 422) return { kind: "ftl-error", error: ((await res.json()) as { error: FtlError }).error };
         return failure(`The Renderer answered HTTP ${res.status}: ${await res.text()}`);
       } catch (err) {
         // The Renderer stopped mid-request, or its answer broke off; the next render restarts it if needed
@@ -133,8 +135,4 @@ export async function startRenderer(): Promise<RendererProcess> {
       },
     };
   }
-}
-
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }

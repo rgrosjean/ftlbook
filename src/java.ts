@@ -4,6 +4,7 @@ import type { Readable, Writable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import path from "node:path";
+import { errorMessage } from "./errors.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -36,7 +37,7 @@ export async function extractJar(jar: string, targetDir: string): Promise<void> 
   try {
     await execFileAsync("java", ["-cp", rendererJar(), "ftlpreview.ExtractJar", jar, targetDir]);
   } catch (err) {
-    throw new Error(`Could not extract ${jar}: ${err instanceof Error ? err.message : String(err)}`);
+    throw new Error(`Could not extract ${jar}: ${errorMessage(err)}`);
   }
 }
 
@@ -69,7 +70,7 @@ async function checkJava(): Promise<void> {
       );
     }
     throw new Error(
-      `Could not run "java -version" (FTL Preview needs a JDK ${REQUIRED_JAVA_MAJOR} or newer): ${err instanceof Error ? err.message : String(err)}`,
+      `Could not run "java -version" (FTL Preview needs a JDK ${REQUIRED_JAVA_MAJOR} or newer): ${errorMessage(err)}`,
     );
   }
   const major = javaMajor(output);

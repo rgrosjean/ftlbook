@@ -7,6 +7,7 @@ import type { ThemePage } from "./theme-chain.ts";
 import { DEFAULT_STORY } from "./stories.ts";
 import { createInterface } from "node:readline";
 import path from "node:path";
+import { errorMessage } from "./errors.ts";
 
 const USAGE = `Usage: ftl-preview <command>
 
@@ -140,6 +141,6 @@ async function model(args: string[]) {
 }
 
 main(process.argv.slice(2)).catch((err: unknown) => {
-  console.error(err instanceof Error ? err.message : err);
+  console.error(errorMessage(err));
   process.exit(1);
 });

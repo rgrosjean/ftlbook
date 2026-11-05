@@ -6,6 +6,7 @@ import { renderStory } from "./render-story.ts";
 import { errorOverlay } from "./error-overlay.ts";
 import { previewUi } from "./preview-ui.ts";
 import { DEFAULT_LOCALE, RESOURCES_ROOT } from "./theme-chain.ts";
+import { errorMessage } from "./errors.ts";
 
 export interface PreviewServerOptions {
   project: Project;
@@ -21,7 +22,7 @@ const PREVIEW_ROUTE = /^\/preview\/([^/]+)\/([^/]+)\/([^/]+)$/;
 export async function startPreviewServer(options: PreviewServerOptions): Promise<{ url: string; close(): Promise<void> }> {
   const server = http.createServer((req, res) => {
     handle(req, res, options).catch((err: unknown) => {
-      send(res, 500, "text/plain; charset=utf-8", `Internal error: ${err instanceof Error ? err.message : String(err)}`);
+      send(res, 500, "text/plain; charset=utf-8", `Internal error: ${errorMessage(err)}`);
     });
   });
 
@@ -70,11 +71,11 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, optio
       return send(res, 500, "text/html; charset=utf-8", await errorOverlay("Invalid Story file", { message: outcome.message }));
     case "unknown-story":
       return send(res, 404, "text/plain; charset=utf-8", `Unknown Story: ${outcome.page}/${outcome.storyName}`);
-    case "render-failed":
+    case "ftl-error":
       return send(res, 500, "text/html; charset=utf-8", await errorOverlay("Render failed", outcome.error));
-    case "renderer-failed":
+    case "renderer-failure":
       return send(res, 500, "text/html; charset=utf-8", await errorOverlay("Renderer failed", { message: outcome.message }));
-    case "ok":
+    case "rendered":
       for (const warning of outcome.warnings) console.warn(`[lenient] ${page}/${storyName}: skipped missing Mock model value\n${warning}\n`);
       return send(res, 200, "text/html; charset=utf-8", outcome.html);
   }
@@ -88,7 +89,7 @@ async function serveUi(res: http.ServerResponse, options: PreviewServerOptions) 
     const pages = await options.project.storyIndex();
     send(res, 200, "text/html; charset=utf-8", previewUi({ pages, locales }));
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = errorMessage(err);
     send(res, 200, "text/html; charset=utf-8", previewUi({ pages: [], locales, storyError: message }));
   }
 }

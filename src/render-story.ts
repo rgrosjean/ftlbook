@@ -1,5 +1,5 @@
 import type { Project } from "./project.ts";
-import type { RenderError, RendererProcess } from "./renderer-process.ts";
+import type { RenderOutcome, RendererProcess } from "./renderer-process.ts";
 import { applyOverrides, StoryFileError } from "./stories.ts";
 import { DEFAULT_LOCALE } from "./theme-chain.ts";
 
@@ -19,10 +19,7 @@ export type StoryOutcome =
   | { kind: "no-default-mock-model"; page: string }
   | { kind: "invalid-story-file"; message: string }
   | { kind: "unknown-story"; page: string; storyName: string }
-  | { kind: "render-failed"; error: RenderError }
-  | { kind: "renderer-failed"; message: string }
-  /** `warnings` lists the template errors skipped in lenient mode. */
-  | { kind: "ok"; html: string; warnings: string[] };
+  | RenderOutcome;
 
 /**
  * Renders a Story of the Project: its overrides applied to the Page's default Mock model, in the
@@ -48,7 +45,7 @@ export async function renderStory(project: Project, renderer: RendererProcess, r
   if (!story) return { kind: "unknown-story", page, storyName: request.storyName };
 
   const chain = await project.themeChain();
-  const result = await renderer.render({
+  return renderer.render({
     theme: { dirs: chain.dirs, properties: chain.properties, ...chain.resourceUrls },
     page,
     storyUrl: project.storyUrl(page, story.name),
@@ -56,6 +53,4 @@ export async function renderStory(project: Project, renderer: RendererProcess, r
     model: applyOverrides(defaults, story.model),
     strict: request.strict,
   });
-  if (result.ok) return { kind: "ok", html: result.html, warnings: result.warnings };
-  return "error" in result ? { kind: "render-failed", error: result.error } : { kind: "renderer-failed", message: result.rendererFailure };
 }

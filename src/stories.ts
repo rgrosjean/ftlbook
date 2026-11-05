@@ -1,6 +1,7 @@
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
+import { errorMessage } from "./errors.ts";
 
 /** Every Page has this Story, even without a Story file: the default Mock model as is. */
 export const DEFAULT_STORY = "Default";
@@ -69,7 +70,7 @@ function parseStoryFile(file: string, text: string): Story[] {
   try {
     json = JSON.parse(text);
   } catch (err) {
-    throw new StoryFileError(`${file} is not valid JSON: ${(err as Error).message}`);
+    throw new StoryFileError(`${file} is not valid JSON: ${errorMessage(err)}`);
   }
   const fail = (problem: string): never => {
     throw new StoryFileError(`${file}: ${problem}`);

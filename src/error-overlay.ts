@@ -1,9 +1,9 @@
 import { readFile } from "node:fs/promises";
-import type { RenderError } from "./renderer-process.ts";
+import type { FtlError } from "./renderer-process.ts";
 import { escapeHtml } from "./html.ts";
 
 /** An error to show; location fields are optional (e.g. an invalid Story file has none). */
-export type LocatedError = Pick<RenderError, "message"> & Partial<Omit<RenderError, "message">>;
+export type LocatedError = Pick<FtlError, "message"> & Partial<Omit<FtlError, "message">>;
 
 const CONTEXT_LINES = 3;
 

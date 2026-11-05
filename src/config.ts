@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { DEFAULT_KEYCLOAK_VERSION } from "./keycloak-themes.ts";
+import { errorMessage } from "./errors.ts";
 
 /** The project's config file, at the project root. Every key is optional. */
 export const CONFIG_FILE = "ftl-preview.json";
@@ -42,7 +43,7 @@ export async function loadConfig(projectDir: string): Promise<ProjectConfig> {
     json = JSON.parse(await readFile(file, "utf8"));
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
-      throw new ConfigError(`${file} is not valid JSON: ${(err as Error).message}`);
+      throw new ConfigError(`${file} is not valid JSON: ${errorMessage(err)}`);
     }
   }
   const fail = (problem: string): never => {
