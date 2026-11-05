@@ -2,8 +2,7 @@ import { loadConfig } from "./config.ts";
 import { ensureBaseThemes } from "./keycloak-themes.ts";
 import { mockModelCatalog, type MockModelCatalog } from "./mock-models.ts";
 import { addStories, DEFAULT_STORY, findStory, storyIndex, storyUrl, type IndexedPage, type Story } from "./stories.ts";
-import { findCommonResource, resolveThemeChain, type ThemeChain } from "./theme-chain.ts";
-import type { Resource } from "./resources.ts";
+import { resolveThemeChain, type ThemeChain } from "./theme-chain.ts";
 
 /**
  * The customer repository FTL Preview runs in: its Theme, Story files and pinned Keycloak version.
@@ -27,8 +26,6 @@ export interface Project {
    */
   setUp(): Promise<void>;
   themeChain(): Promise<ThemeChain>;
-  /** A resource of a Base theme's common type, e.g. keycloak/common. */
-  findCommonResource(baseTheme: string, resourcePath: string): Promise<Resource | undefined>;
   /** A Story by Page and name, the Default Story included. */
   findStory(page: string, name: string): Promise<Story | undefined>;
   storyIndex(): Promise<IndexedPage[]>;
@@ -79,8 +76,6 @@ export async function openProject(projectDir: string, progress: (msg: string) =>
       await baseThemesDir();
     },
     themeChain,
-    findCommonResource: async (baseTheme, resourcePath) =>
-      findCommonResource(await baseThemesDir(), baseTheme, resourcePath),
     findStory: (page, name) => findStory(config.storiesDir, page, name),
     storyIndex: () => storyIndex(config.storiesDir, config.themeType),
     addStories: async (pages, requestedName) => {

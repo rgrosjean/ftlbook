@@ -5,7 +5,7 @@ import { StoryFileError } from "./stories.ts";
 import { renderStory } from "./render-story.ts";
 import { errorOverlay } from "./error-overlay.ts";
 import { previewUi } from "./preview-ui.ts";
-import { DEFAULT_LOCALE } from "./theme-chain.ts";
+import { DEFAULT_LOCALE, RESOURCES_ROOT } from "./theme-chain.ts";
 
 export interface PreviewServerOptions {
   project: Project;
@@ -16,11 +16,6 @@ export interface PreviewServerOptions {
 }
 
 const PREVIEW_ROUTE = /^\/preview\/([^/]+)\/([^/]+)\/([^/]+)$/;
-/**
- * Mirrors Keycloak's url.resourcesPath (/resources/<theme-type>/<theme>, e.g. /resources/login/acme)
- * and url.resourcesCommonPath (/resources/common/<theme>).
- */
-const RESOURCES_ROUTE = /^\/resources\/([\w.-]+)\/([\w.-]+)\/(.+)$/;
 
 /** Dev server: renders each Story fresh on every request (no caching in dev). */
 export async function startPreviewServer(options: PreviewServerOptions): Promise<{ url: string; close(): Promise<void> }> {
@@ -48,11 +43,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, optio
   if (req.method !== "GET") return send(res, 404, "text/plain; charset=utf-8", "Not found");
   if (url.pathname === "/") return serveUi(res, options);
   if (url.pathname === "/api/stories") return serveStoryIndex(res, options);
-  const resource = RESOURCES_ROUTE.exec(url.pathname);
-  const common = resource?.[1] === "common";
-  if (resource && (common || resource[1] === options.project.themeType)) {
-    return serveResource(res, options, common, resource[2], resource[3]);
-  }
+  if (url.pathname.startsWith(`${RESOURCES_ROOT}/`)) return serveResource(res, options, url.pathname);
   const match = PREVIEW_ROUTE.exec(url.pathname);
   if (!match) return send(res, 404, "text/plain; charset=utf-8", "Not found");
 
@@ -93,7 +84,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, optio
 async function serveUi(res: http.ServerResponse, options: PreviewServerOptions) {
   let locales = [DEFAULT_LOCALE];
   try {
-    locales = await (await options.project.themeChain()).locales();
+    locales = (await options.project.themeChain()).locales;
     const pages = await options.project.storyIndex();
     send(res, 200, "text/html; charset=utf-8", previewUi({ pages, locales }));
   } catch (err) {
@@ -113,28 +104,16 @@ async function serveStoryIndex(res: http.ServerResponse, options: PreviewServerO
   }
 }
 
-/**
- * Resources of the Project's Theme type come from the Theme chain (the theme name in the URL is cosmetic, as with one
- * Theme per project); common resources from the named Base theme's common type.
- */
-async function serveResource(
-  res: http.ServerResponse,
-  options: PreviewServerOptions,
-  common: boolean,
-  themeName: string,
-  encodedPath: string,
-) {
-  let resourcePath: string;
+/** A resource at one of the URLs the Theme chain builds (Keycloak's url.resourcesPath and url.resourcesCommonPath). */
+async function serveResource(res: http.ServerResponse, options: PreviewServerOptions, urlPath: string) {
+  let found;
   try {
-    resourcePath = decodeURIComponent(encodedPath);
-  } catch {
+    found = await (await options.project.themeChain()).findResource(urlPath);
+  } catch (err) {
+    if (!(err instanceof URIError)) throw err;
     return send(res, 400, "text/plain; charset=utf-8", "Malformed URL");
   }
-  const found =
-    common
-      ? await options.project.findCommonResource(themeName, resourcePath)
-      : await (await options.project.themeChain()).findResource(resourcePath);
-  if (!found) return send(res, 404, "text/plain; charset=utf-8", `Resource not found: ${resourcePath}`);
+  if (!found) return send(res, 404, "text/plain; charset=utf-8", `Resource not found: ${urlPath}`);
   res.writeHead(200, { "content-type": found.contentType, "cache-control": "no-store" });
   res.end(found.body);
 }

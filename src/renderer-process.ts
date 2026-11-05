@@ -1,14 +1,19 @@
 import { REQUIRED_JAVA_MAJOR, spawnRenderer } from "./java.ts";
 
-export interface RenderRequest {
+/** What the Renderer needs of the Theme chain. */
+export interface RenderTheme {
   /** Theme chain directories, most specific first. */
-  themes: string[];
-  /** The Theme type, for the resource URLs. */
-  themeType: string;
-  /** The Theme's name as Keycloak would know it, for the resource URLs. */
-  themeName: string;
+  dirs: string[];
   /** theme.properties merged over the Theme chain; the Renderer does not read them itself. */
   properties: Record<string, string>;
+  /** Keycloak's url.resourcesPath, built by the Theme chain; the Renderer only puts it in the model. */
+  resourcesPath: string;
+  /** Keycloak's url.resourcesCommonPath, built by the Theme chain; the Renderer only puts it in the model. */
+  resourcesCommonPath: string;
+}
+
+export interface RenderRequest {
+  theme: RenderTheme;
   page: string;
   /** The Story's URL, which the locale switcher links to with ?locale=. */
   storyUrl: string;

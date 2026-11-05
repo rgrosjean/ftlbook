@@ -15,29 +15,45 @@ export interface ThemePage {
   baseTheme: string | undefined;
 }
 
-/** The Theme followed by every Base theme it builds on, most specific first. Files are read on every call. */
+/** Where the preview server serves resources: Keycloak's theme root URL. */
+export const RESOURCES_ROOT = "/resources";
+
+/**
+ * The Theme followed by every Base theme it builds on, most specific first. Each theme.properties is read once,
+ * while the chain is resolved; Pages and resources are read on every call.
+ */
 export interface ThemeChain {
   /** Theme directories, most specific first, for the Renderer. */
   readonly dirs: string[];
+  /** theme.properties merged over the chain, so the most specific Theme wins (like Keycloak). */
+  readonly properties: Record<string, string>;
+  /** Locales the Theme supports: theme.properties `locales` over the chain (DEFAULT_LOCALE when none are listed). */
+  readonly locales: string[];
   /**
-   * The Theme's name as Keycloak would know it: the folder holding the Theme (Keycloak's
-   * themes/<name>/<type> layout), or the fallback Base theme's name when the Project has none.
+   * Keycloak's UrlBean resource URLs: `resourcesPath` is the theme root, Theme type and Theme name;
+   * `resourcesCommonPath` the theme root and the `common` theme property, else common/keycloak.
    */
-  readonly themeName: string;
+  readonly resourceUrls: ResourceUrls;
   /** Every Page of the chain, sorted by name. */
   pages(): Promise<ThemePage[]>;
-  /** A resource below `resources/` of the first Theme in the chain that has it. */
-  findResource(resourcePath: string): Promise<Resource | undefined>;
-  /** theme.properties merged over the chain, so the most specific Theme wins (like Keycloak). */
-  properties(): Promise<Record<string, string>>;
-  /** Locales the Theme supports: theme.properties `locales` over the chain (DEFAULT_LOCALE when none are listed). */
-  locales(): Promise<string[]>;
+  /**
+   * The resource a URL below RESOURCES_ROOT names, as `resourceUrls` build them: Theme resources from the chain
+   * (the Theme name in the URL is not checked, as there is one Theme), common resources from the named Base
+   * theme's common type. Undefined for any other URL. Throws URIError on a malformed escape.
+   */
+  findResource(urlPath: string): Promise<Resource | undefined>;
+}
+
+export interface ResourceUrls {
+  resourcesPath: string;
+  resourcesCommonPath: string;
 }
 
 interface ChainEntry {
   dir: string;
   /** Undefined for the customer Theme. */
   baseTheme: string | undefined;
+  properties: Record<string, string>;
 }
 
 /**
@@ -58,13 +74,13 @@ export async function resolveThemeChain(
     if (!(await isDirectory(dir))) {
       throw new Error(`${referencedFrom} refers to "${type}/${name}", which is not a Base theme of this Keycloak version`);
     }
-    return { dir, baseTheme: name };
+    return { dir, baseTheme: name, properties: await readThemeProperties(dir) };
   };
 
   const chain: ChainEntry[] = [];
   const visitedParents = new Set<string>();
   let current: ChainEntry | undefined = themeDir
-    ? { dir: path.resolve(themeDir), baseTheme: undefined }
+    ? { dir: path.resolve(themeDir), baseTheme: undefined, properties: await readThemeProperties(themeDir) }
     : await loadBaseTheme(FALLBACK_LOGIN_BASE_THEME, themeType, "The fallback Base theme");
 
   while (current) {
@@ -72,7 +88,7 @@ export async function resolveThemeChain(
     visitedParents.add(current.dir);
     chain.push(current);
 
-    const properties = await readThemeProperties(current.dir);
+    const properties: Record<string, string> = current.properties;
     const propertiesFile = path.join(current.dir, "theme.properties");
     if (properties.import) {
       const [type, name] = properties.import.split("/", 2);
@@ -84,29 +100,33 @@ export async function resolveThemeChain(
   }
 
   const dirs = chain.map((entry) => entry.dir);
+  const properties = mergedThemeProperties(chain);
+  // The Theme's name as Keycloak would know it: the folder holding the Theme (Keycloak's themes/<name>/<type> layout)
+  const themeName = themeDir ? path.basename(path.dirname(path.resolve(themeDir))) : FALLBACK_LOGIN_BASE_THEME;
   return {
     dirs,
-    themeName: themeDir ? path.basename(path.dirname(path.resolve(themeDir))) : FALLBACK_LOGIN_BASE_THEME,
+    properties,
+    locales: themeLocales(properties),
+    resourceUrls: {
+      resourcesPath: `${RESOURCES_ROOT}/${themeType}/${themeName}`,
+      resourcesCommonPath: `${RESOURCES_ROOT}/${properties.common || "common/keycloak"}`,
+    },
     pages: () => listPages(chain),
-    findResource: (resourcePath) => findResource(dirs, resourcePath),
-    properties: () => mergedThemeProperties(dirs),
-    locales: async () => themeLocales(await mergedThemeProperties(dirs)),
+    findResource: async (urlPath) => {
+      const match = RESOURCE_URL.exec(urlPath);
+      if (!match) return undefined;
+      const [type, name, resourcePath] = match.slice(1).map(decodeURIComponent);
+      if (type === themeType) return findResource(dirs, resourcePath);
+      if (type !== "common") return undefined;
+      // The name becomes a directory: reject anything that could leave the Base themes
+      if (!/^[\w.-]+$/.test(name) || name === "." || name === "..") return undefined;
+      return findResource([baseThemeDir(baseThemesDir, name, "common")], resourcePath);
+    },
   };
 }
 
-/**
- * A resource of a Base theme's common type (Keycloak's url.resourcesCommonPath), e.g. keycloak/common.
- * Undefined when there is no such Base theme or resource.
- */
-export async function findCommonResource(
-  baseThemesDir: string,
-  baseTheme: string,
-  resourcePath: string,
-): Promise<Resource | undefined> {
-  // The name becomes a directory: reject anything that could leave the Base themes
-  if (!/^[\w.-]+$/.test(baseTheme) || baseTheme === "." || baseTheme === "..") return undefined;
-  return findResource([baseThemeDir(baseThemesDir, baseTheme, "common")], resourcePath);
-}
+/** A URL `resourceUrls` build: RESOURCES_ROOT, then Theme type and Theme name, or common and the common theme's name. */
+const RESOURCE_URL = new RegExp(`^${RESOURCES_ROOT}/([\\w.-]+)/([\\w.-]+)/(.+)$`);
 
 /** Base themes are extracted to `theme/<name>/<type>`. */
 function baseThemeDir(baseThemesDir: string, name: string, type: string): string {
@@ -141,11 +161,11 @@ async function listPages(chain: ChainEntry[]): Promise<ThemePage[]> {
 }
 
 /** theme.properties merged over the chain, least specific first, so the child wins (like Keycloak). */
-async function mergedThemeProperties(dirs: string[]): Promise<Record<string, string>> {
+function mergedThemeProperties(chain: ChainEntry[]): Record<string, string> {
   // A Map, so a key such as __proto__ is kept like any other (Object.fromEntries defines own properties)
   const merged = new Map<string, string>();
-  for (const dir of [...dirs].reverse()) {
-    for (const [key, value] of Object.entries(await readThemeProperties(dir))) merged.set(key, value);
+  for (const entry of [...chain].reverse()) {
+    for (const [key, value] of Object.entries(entry.properties)) merged.set(key, value);
   }
   return Object.fromEntries(merged);
 }

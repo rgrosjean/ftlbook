@@ -49,10 +49,7 @@ export async function renderStory(project: Project, renderer: RendererProcess, r
 
   const chain = await project.themeChain();
   const result = await renderer.render({
-    themes: chain.dirs,
-    themeType,
-    themeName: chain.themeName,
-    properties: await chain.properties(),
+    theme: { dirs: chain.dirs, properties: chain.properties, ...chain.resourceUrls },
     page,
     storyUrl: project.storyUrl(page, story.name),
     locale: request.locale || story.locale || DEFAULT_LOCALE,

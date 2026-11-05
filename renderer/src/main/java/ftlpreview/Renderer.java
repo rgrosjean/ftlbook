@@ -23,14 +23,12 @@ import java.util.Properties;
 /** Renders one Page with real FreeMarker, configured as Keycloak's DefaultFreeMarkerProvider. */
 final class Renderer {
 
-    /** Where the preview server serves Theme resources (Keycloak's theme root URL). */
-    private static final String THEME_ROOT = "/resources";
-
     RenderResult render(RenderRequest request) throws RenderException {
-        ThemeChain chain = ThemeChain.of(request.themes());
+        RenderRequest.Theme theme = request.theme();
+        ThemeChain chain = ThemeChain.of(theme.dirs());
         Locale locale = request.locale() == null ? ThemeChain.DEFAULT_LOCALE : Locale.forLanguageTag(request.locale());
         Properties properties = new Properties();
-        if (request.properties() != null) properties.putAll(request.properties());
+        if (theme.properties() != null) properties.putAll(theme.properties());
         Properties messages = chain.messages(locale, properties.getProperty("locales", ""));
 
         Map<String, Object> model = new HashMap<>(request.model() == null ? Map.of() : request.model());
@@ -52,7 +50,7 @@ final class Renderer {
         if (model.get("realm") instanceof Map<?, ?> realm && Boolean.TRUE.equals(realm.get("internationalizationEnabled"))) {
             model.put("locale", new LocaleBean(supportedLocales(realm), locale, request.storyUrl(), messages));
         }
-        model.put("url", urlBean(model.get("url"), request.themeType(), request.themeName(), properties));
+        model.put("url", urlBean(model.get("url"), theme));
 
         List<String> warnings = new ArrayList<>();
         Configuration cfg = configuration(chain, request.isStrict(), warnings);
@@ -99,17 +97,14 @@ final class Renderer {
     }
 
     /**
-     * Keycloak's UrlBean: the Mock model's flow URLs plus the resource URLs derived from the Theme, which
-     * replace any mocked value:
-     * resourcesPath is the theme root, type and name; resourcesCommonPath the theme root and the
-     * {@code common} theme property, else common/keycloak. The theme root is the preview server's /resources.
+     * Keycloak's UrlBean: the Mock model's flow URLs plus the resource URLs the Theme chain built, which
+     * replace any mocked value.
      */
-    private static Map<String, Object> urlBean(Object mocked, String themeType, String themeName, Properties properties) {
+    private static Map<String, Object> urlBean(Object mocked, RenderRequest.Theme theme) {
         Map<String, Object> url = new HashMap<>();
         if (mocked instanceof Map<?, ?> m) m.forEach((k, v) -> url.put(String.valueOf(k), v));
-        url.put("resourcesPath", THEME_ROOT + "/" + themeType + "/" + themeName);
-        String common = properties.getProperty("common");
-        url.put("resourcesCommonPath", THEME_ROOT + "/" + (common == null || common.isEmpty() ? "common/keycloak" : common));
+        url.put("resourcesPath", theme.resourcesPath());
+        url.put("resourcesCommonPath", theme.resourcesCommonPath());
         return url;
     }
 
