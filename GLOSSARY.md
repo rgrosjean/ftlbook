@@ -17,7 +17,7 @@ The one Theme of the Project whose Pages FTL Preview renders.
 _Avoid_: Main theme, current theme, the Theme
 
 **Theme type**:
-The Keycloak area a Theme targets: login, account, email, or common. A common Theme holds only shared resources and is reached through an import.
+The Keycloak area a Theme targets: login, account, email, or common. A common Theme holds only shared resources and is reached through an import or through the `common` theme property.
 _Avoid_: Theme kind, theme category
 
 **Base theme**:
@@ -27,6 +27,10 @@ _Avoid_: Parent theme, default theme
 **Theme chain**:
 The Previewed theme followed by every Theme and Base theme it builds on, through parents and imports, most specific first. Pages, messages and resources are looked up along it, and the first match wins.
 _Avoid_: Theme hierarchy, inheritance chain
+
+**Common theme chain**:
+A common theme followed by every Theme and Base theme it builds on, through parents and imports, most specific first. Common resources are looked up along it, and the first match wins.
+_Avoid_: Common chain, common hierarchy
 
 **Page**:
 A single Keycloak screen defined by one FTL file, such as `login.ftl` or `register.ftl`.
