@@ -2,8 +2,7 @@ import { parseArgs } from "node:util";
 import { startRenderer } from "./renderer-process.ts";
 import { startPreviewServer } from "./preview-server.ts";
 import { CONFIG_FILE, CONFIG_KEYS } from "./config.ts";
-import { openProject, type Project } from "./project.ts";
-import type { ThemePage } from "./theme-chain.ts";
+import { openProject, type Project, type ScaffoldPage } from "./project.ts";
 import { DEFAULT_STORY } from "./stories.ts";
 import { createInterface } from "node:readline";
 import path from "node:path";
@@ -80,11 +79,10 @@ async function addStory(args: string[]) {
   let pages = values.page ?? [];
   let name = values.story;
   if (pages.length === 0) {
-    const themePages = await (await project.themeChain()).pages();
-    const withDefaults = new Set(await project.mockModels.pages());
+    const themePages = await project.scaffoldPages();
     const answers = stdinPrompts();
     console.log("Pages of the Theme and its Base theme:");
-    themePages.forEach((p, i) => console.log(`  ${String(i + 1).padStart(3)}. ${pageLabel(p, withDefaults)}`));
+    themePages.forEach((p, i) => console.log(`  ${String(i + 1).padStart(3)}. ${pageLabel(p)}`));
     const choice = await answers.ask("Pages to add a Story for (numbers or names, comma-separated): ");
     pages = choice
       .split(",")
@@ -105,9 +103,9 @@ async function addStory(args: string[]) {
   }
 }
 
-function pageLabel(page: ThemePage, withDefaults: Set<string>): string {
+function pageLabel(page: ScaffoldPage): string {
   const origin = page.baseTheme === undefined ? "Theme" : `Base theme ${page.baseTheme}`;
-  const note = withDefaults.has(page.page) ? "" : ", no default Mock model yet";
+  const note = page.hasDefaultMockModel ? "" : ", no default Mock model yet";
   return `${page.page.padEnd(45)} (${origin}${note})`;
 }
 

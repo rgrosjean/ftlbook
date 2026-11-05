@@ -2,7 +2,7 @@ import { loadConfig } from "./config.ts";
 import { ensureBaseThemes } from "./keycloak-themes.ts";
 import { mockModelCatalog, type MockModelCatalog } from "./mock-models.ts";
 import { addStories, DEFAULT_STORY, findStory, storyIndex, storyUrl, type IndexedPage, type Story } from "./stories.ts";
-import { resolveThemeChain, type ThemeChain } from "./theme-chain.ts";
+import { resolveThemeChain, type ThemeChain, type ThemePage } from "./theme-chain.ts";
 
 /**
  * The customer repository FTL Preview runs in: its Themes, Story files and pinned Keycloak version.
@@ -29,6 +29,8 @@ export interface Project {
   /** A Story by Page and name, the Default Story included. */
   findStory(page: string, name: string): Promise<Story | undefined>;
   storyIndex(): Promise<IndexedPage[]>;
+  /** Scaffold: every Page of the Theme chain, sorted by name, with its origin and whether it has a default Mock model. */
+  scaffoldPages(): Promise<ScaffoldPage[]>;
   /**
    * Scaffold: adds a Story to each of the given Pages (duplicates ignored). The name defaults to the
    * Default Story's. Throws, writing nothing, when no Page is given, the name is empty or a Page is not a
@@ -36,6 +38,12 @@ export interface Project {
    */
   addStories(pages: string[], name?: string): Promise<AddedStories>;
   storyUrl(page: string, name: string): string;
+}
+
+/** A Page the Scaffold can add a Story for. */
+export interface ScaffoldPage extends ThemePage {
+  /** False when the tool ships no default Mock model for the Page, so its Stories cannot render yet. */
+  hasDefaultMockModel: boolean;
 }
 
 /** What the Scaffold added: the Story's name and, per Page, its Story file and URL. */
@@ -65,6 +73,10 @@ export async function openProject(projectDir: string, progress: (msg: string) =>
   const baseThemesDir = () => (baseThemes ??= ensureBaseThemes(config.keycloakVersion, config.mavenRepository, progress));
 
   const themeChain = async () => resolveThemeChain(config.themeDir, await baseThemesDir(), config.themeType, config.keycloakVersion);
+  const scaffoldPages = async (): Promise<ScaffoldPage[]> => {
+    const withDefaults = new Set(await mockModels.pages());
+    return (await (await themeChain()).pages()).map((p) => ({ ...p, hasDefaultMockModel: withDefaults.has(p.page) }));
+  };
   const pageStoryUrl = (page: string, name: string) => storyUrl(config.themeType, page, name);
 
   return {
@@ -78,15 +90,15 @@ export async function openProject(projectDir: string, progress: (msg: string) =>
     themeChain,
     findStory: (page, name) => findStory(config.storiesDir, page, name),
     storyIndex: () => storyIndex(config.storiesDir, config.themeType),
+    scaffoldPages,
     addStories: async (pages, requestedName) => {
       const name = (requestedName ?? DEFAULT_STORY).trim();
       if (pages.length === 0) throw new Error("No Pages chosen");
       if (name === "") throw new Error("The Story name must not be empty");
-      const themePages = new Set((await (await themeChain()).pages()).map((p) => p.page));
-      const unknown = pages.filter((page) => !themePages.has(page));
+      const scaffoldable = new Map((await scaffoldPages()).map((p) => [p.page, p]));
+      const unknown = pages.filter((page) => !scaffoldable.has(page));
       if (unknown.length > 0) throw new Error(`Not a Page of the Theme or its Base theme: ${unknown.join(", ")}`);
 
-      const withDefaults = new Set(await mockModels.pages());
       const written = await addStories(config.storiesDir, [...new Set(pages)], name);
       return {
         name,
@@ -94,7 +106,7 @@ export async function openProject(projectDir: string, progress: (msg: string) =>
           page,
           file,
           url: pageStoryUrl(page, name),
-          hasDefaultMockModel: withDefaults.has(page),
+          hasDefaultMockModel: scaffoldable.get(page)!.hasDefaultMockModel,
         })),
       };
     },
