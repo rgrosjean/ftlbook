@@ -3,6 +3,10 @@ import assert from "node:assert/strict";
 import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { copyProject, runCli, startServer, fixture, type RunningServer } from "./harness.ts";
+import { DEFAULT_STORY, storyUrl } from "../src/stories.ts";
+
+/** The Default Story of the Page every test here renders. */
+const LOGIN_STORY_URL = storyUrl("login", "login.ftl", DEFAULT_STORY);
 
 /** href/src values in the rendered Page that end with the given file name. */
 function linkTo(html: string, fileName: string): string {
@@ -21,7 +25,7 @@ function textOf(html: string): string {
  * in its sidebar, and a resource request answers 500 with the error itself, not as an internal error of FTL Preview.
  */
 async function assertFailsEverywhere(server: RunningServer, expected: RegExp): Promise<string> {
-  const page = await fetch(`${server.baseUrl}/preview/login/login.ftl/Default`);
+  const page = await fetch(`${server.baseUrl}${LOGIN_STORY_URL}`);
   assert.equal(page.status, 500);
   const overlay = await page.text();
   assert.match(overlay, /id="ftl-preview-error"/);
@@ -52,7 +56,7 @@ describe("a Previewed theme building on other Themes of the Project (themes/<nam
   let html: string;
   before(async () => {
     server = await startServer(fixture("project-themes"));
-    const res = await fetch(`${server.baseUrl}/preview/login/login.ftl/Default`);
+    const res = await fetch(`${server.baseUrl}${LOGIN_STORY_URL}`);
     html = await res.text();
     assert.equal(res.status, 200, html);
   });
@@ -110,7 +114,7 @@ test("common resources come from the common Theme of the Project the common them
   const server = await startServer(project);
   t.after(() => server.stop());
 
-  const html = await (await fetch(`${server.baseUrl}/preview/login/login.ftl/Default`)).text();
+  const html = await (await fetch(`${server.baseUrl}${LOGIN_STORY_URL}`)).text();
   // keycloak.v2's template.ftl links its scripts below url.resourcesCommonPath
   assert.match(html, /"\/resources\/common\/acme\/vendor\/rfc4648\/rfc4648\.js"/);
   const res = await fetch(`${server.baseUrl}/resources/common/acme/css/shared.css`);
@@ -259,7 +263,7 @@ describe("a broken Common theme chain of the common theme the common theme prope
     const server = await startServer(project);
     t.after(() => server.stop());
 
-    const page = await fetch(`${server.baseUrl}/preview/login/login.ftl/Default`);
+    const page = await fetch(`${server.baseUrl}${LOGIN_STORY_URL}`);
     const html = await page.text();
     assert.equal(page.status, 200, html);
     assert.match(html, /"\/resources\/common\/keycloak\/vendor\/rfc4648\/rfc4648\.js"/);

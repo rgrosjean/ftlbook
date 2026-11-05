@@ -102,15 +102,28 @@ export async function resolveThemeChain(
     const baseDir = baseThemeDir(baseThemesDir, name, type);
     return (await isDirectory(baseDir)) ? { dir: baseDir, baseTheme: name } : undefined;
   };
-  const loadTheme = async (name: string, type: string, referencedFrom: string): Promise<ChainEntry> => {
+  const readTheme = async (name: string, type: string): Promise<ChainEntry | undefined> => {
     const found = await findTheme(name, type);
+    return found && { ...found, properties: await readThemeProperties(found.dir) };
+  };
+  const loadTheme = async (name: string, type: string, referencedFrom: string): Promise<ChainEntry> => {
+    const found = await readTheme(name, type);
     if (!found) {
       const where = themesRoot
         ? `neither a Theme of the Project (looked in ${themesRoot}) nor a Base theme of Keycloak ${keycloakVersion}`
         : `not a Base theme of Keycloak ${keycloakVersion}`;
       throw new ThemeChainError(`${referencedFrom} refers to "${type}/${name}", which is ${where}`);
     }
-    return { ...found, properties: await readThemeProperties(found.dir) };
+    return found;
+  };
+  /**
+   * Directories of the Common theme chain of the named common theme, built like the Theme chain, as Keycloak's ThemeResource
+   * serves common resources from the whole chain of that common theme. Undefined when there is no such theme and nothing
+   * refers to it; with `referencedFrom`, a missing theme fails like a missing parent.
+   */
+  const commonChainDirs = async (name: string, referencedFrom?: string): Promise<string[] | undefined> => {
+    const start = referencedFrom ? await loadTheme(name, COMMON_THEME_TYPE, referencedFrom) : await readTheme(name, COMMON_THEME_TYPE);
+    return start && (await followChain(start, COMMON_THEME_TYPE, loadTheme)).map((entry) => entry.dir);
   };
 
   const chain = await followChain(
@@ -123,13 +136,11 @@ export async function resolveThemeChain(
 
   const dirs = chain.map((entry) => entry.dir);
   const properties = mergedThemeProperties(chain);
+  // Common theme chains by common theme name. The one the `common` theme property names is resolved with the Theme chain,
+  // so a broken one fails the Page like a broken Theme chain; any other is resolved when a resource URL names it.
+  const commonChains = new Map<string, string[]>();
   const commonTheme = namedCommonTheme(chain, properties);
-  // Resolved with the Theme chain, so a broken one fails the Page like a broken Theme chain
-  const commonDirs =
-    commonTheme &&
-    (await followChain(await loadTheme(commonTheme.name, COMMON_THEME_TYPE, `${commonTheme.file} (common)`), COMMON_THEME_TYPE, loadTheme)).map(
-      (entry) => entry.dir,
-    );
+  if (commonTheme) commonChains.set(commonTheme.name, (await commonChainDirs(commonTheme.name, `${commonTheme.file} (common)`))!);
   // The Previewed theme's name as Keycloak would know it: its folder's parent (Keycloak's themes/<name>/<type> layout)
   const themeName = previewedDir ? path.basename(path.dirname(previewedDir)) : FALLBACK_LOGIN_BASE_THEME;
   return {
@@ -147,12 +158,8 @@ export async function resolveThemeChain(
       const [type, name, resourcePath] = match.slice(1).map(decodeURIComponent);
       if (type === themeType) return findResource(dirs, resourcePath);
       if (type !== COMMON_THEME_TYPE) return undefined;
-      if (commonDirs && name === commonTheme.name) return findResource(commonDirs, resourcePath);
-      const common = await findTheme(name, COMMON_THEME_TYPE);
-      if (!common) return undefined;
-      // Keycloak's ThemeResource serves common resources from the whole chain of that common theme
-      const commonChain = await followChain({ ...common, properties: await readThemeProperties(common.dir) }, COMMON_THEME_TYPE, loadTheme);
-      return findResource(commonChain.map((entry) => entry.dir), resourcePath);
+      const commonDirs = commonChains.get(name) ?? (await commonChainDirs(name));
+      return commonDirs && findResource(commonDirs, resourcePath);
     },
   };
 }
