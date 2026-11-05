@@ -19,8 +19,9 @@ export interface ThemePage {
 export const RESOURCES_ROOT = "/resources";
 
 /**
- * The Previewed theme followed by every Theme and Base theme it builds on, most specific first. Each theme.properties is read once,
- * while the chain is resolved; Pages and resources are read on every call.
+ * The Previewed theme followed by every Theme and Base theme it builds on, most specific first. Each theme.properties of the
+ * chain is read once, while the chain is resolved; Pages and resources are read on every call, and so is the chain of the
+ * common theme a common resource URL names.
  */
 export interface ThemeChain {
   /** Theme directories, most specific first, for the Renderer. */
@@ -38,8 +39,9 @@ export interface ThemeChain {
   pages(): Promise<ThemePage[]>;
   /**
    * The resource a URL below RESOURCES_ROOT names, as `resourceUrls` build them: Theme resources from the chain
-   * (the Theme name in the URL is not checked, as there is one Previewed theme), common resources from the named
-   * common Theme of the Project, else the named Base theme's common type. Undefined for any other URL. Throws URIError on a malformed escape.
+   * (the Theme name in the URL is not checked, as there is one Previewed theme), common resources from the chain of the
+   * named common theme (a Theme of the Project, else a Base theme), built like the Theme chain. Undefined for any other URL.
+   * Throws URIError on a malformed escape, and like `resolveThemeChain` when the common chain names a missing theme or has a cycle.
    */
   findResource(urlPath: string): Promise<Resource | undefined>;
 }
@@ -94,27 +96,13 @@ export async function resolveThemeChain(
     return { ...found, properties: await readThemeProperties(found.dir) };
   };
 
-  const chain: ChainEntry[] = [];
-  const visitedParents = new Set<string>();
-  let current: ChainEntry | undefined = previewedDir
-    ? { dir: previewedDir, baseTheme: undefined, properties: await readThemeProperties(previewedDir) }
-    : await loadTheme(FALLBACK_LOGIN_BASE_THEME, themeType, "The fallback Base theme");
-
-  while (current) {
-    if (visitedParents.has(current.dir)) throw new Error(`Theme parent cycle at ${current.dir}`);
-    visitedParents.add(current.dir);
-    chain.push(current);
-
-    const properties: Record<string, string> = current.properties;
-    const propertiesFile = path.join(current.dir, "theme.properties");
-    if (properties.import) {
-      const [type, name] = properties.import.split("/", 2);
-      if (!type || !name) throw new Error(`${propertiesFile}: import must be "<type>/<name>", got "${properties.import}"`);
-      const imported = await loadTheme(name, type, `${propertiesFile} (import)`);
-      if (!chain.some((entry) => entry.dir === imported.dir)) chain.push(imported);
-    }
-    current = properties.parent ? await loadTheme(properties.parent, themeType, `${propertiesFile} (parent)`) : undefined;
-  }
+  const chain = await followChain(
+    previewedDir
+      ? { dir: previewedDir, baseTheme: undefined, properties: await readThemeProperties(previewedDir) }
+      : await loadTheme(FALLBACK_LOGIN_BASE_THEME, themeType, "The fallback Base theme"),
+    themeType,
+    loadTheme,
+  );
 
   const dirs = chain.map((entry) => entry.dir);
   const properties = mergedThemeProperties(chain);
@@ -136,9 +124,42 @@ export async function resolveThemeChain(
       if (type === themeType) return findResource(dirs, resourcePath);
       if (type !== "common") return undefined;
       const common = await findTheme(name, "common");
-      return common && findResource([common.dir], resourcePath);
+      if (!common) return undefined;
+      // Keycloak's ThemeResource serves common resources from the whole chain of that common theme
+      const commonChain = await followChain({ ...common, properties: await readThemeProperties(common.dir) }, "common", loadTheme);
+      return findResource(commonChain.map((entry) => entry.dir), resourcePath);
     },
   };
+}
+
+/**
+ * A theme followed by its import, then each parent (of the same type) followed by that parent's import, most specific first,
+ * like Keycloak's DefaultThemeManager.loadTheme. An import's own parent and import are not followed, as in Keycloak.
+ */
+async function followChain(
+  start: ChainEntry,
+  themeType: string,
+  loadTheme: (name: string, type: string, referencedFrom: string) => Promise<ChainEntry>,
+): Promise<ChainEntry[]> {
+  const chain: ChainEntry[] = [];
+  const visitedParents = new Set<string>();
+  let current: ChainEntry | undefined = start;
+  while (current) {
+    if (visitedParents.has(current.dir)) throw new Error(`Theme parent cycle at ${current.dir}`);
+    visitedParents.add(current.dir);
+    chain.push(current);
+
+    const properties: Record<string, string> = current.properties;
+    const propertiesFile = path.join(current.dir, "theme.properties");
+    if (properties.import) {
+      const [type, name] = properties.import.split("/", 2);
+      if (!type || !name) throw new Error(`${propertiesFile}: import must be "<type>/<name>", got "${properties.import}"`);
+      const imported = await loadTheme(name, type, `${propertiesFile} (import)`);
+      if (!chain.some((entry) => entry.dir === imported.dir)) chain.push(imported);
+    }
+    current = properties.parent ? await loadTheme(properties.parent, themeType, `${propertiesFile} (parent)`) : undefined;
+  }
+  return chain;
 }
 
 /** A URL `resourceUrls` build: RESOURCES_ROOT, then Theme type and Theme name, or common and the common theme's name. */
