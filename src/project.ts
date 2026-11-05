@@ -5,7 +5,7 @@ import { addStories, DEFAULT_STORY, findStory, storyIndex, storyUrl, type Indexe
 import { resolveThemeChain, type ThemeChain } from "./theme-chain.ts";
 
 /**
- * The customer repository FTL Preview runs in: its Theme, Story files and pinned Keycloak version.
+ * The customer repository FTL Preview runs in: its Themes, Story files and pinned Keycloak version.
  *
  * Config, Mock model choice and Base themes are fixed when the Project opens (config edits need a
  * restart); the Theme chain and Story files are read fresh on every call, so edits show on reload.
@@ -64,7 +64,7 @@ export async function openProject(projectDir: string, progress: (msg: string) =>
   let baseThemes: Promise<string> | undefined;
   const baseThemesDir = () => (baseThemes ??= ensureBaseThemes(config.keycloakVersion, config.mavenRepository, progress));
 
-  const themeChain = async () => resolveThemeChain(config.themeDir, await baseThemesDir(), config.themeType);
+  const themeChain = async () => resolveThemeChain(config.themeDir, await baseThemesDir(), config.themeType, config.keycloakVersion);
   const pageStoryUrl = (page: string, name: string) => storyUrl(config.themeType, page, name);
 
   return {

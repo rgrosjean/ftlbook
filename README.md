@@ -36,6 +36,16 @@ my-theme-project/
 
 Without a `theme/login` directory, the `keycloak.v2` Base theme renders on its own.
 
+### Several Themes
+
+A repository with several Themes, laid out like Keycloak's themes folder (`<themes root>/<name>/<type>`), points `themeDir` at the login Theme to preview, e.g. for a Maven theme jar:
+
+```json
+{ "themeDir": "src/main/resources/theme/acme/login" }
+```
+
+A `parent=` or `import=` in its `theme.properties` (`parent=acme-base`, `import=common/acme`) is then looked up among the Themes next to it first, then among the Base themes, as Keycloak does. A Theme with a Base theme's name and type takes its place. The `common` theme property (`common=common/acme`) works the same way.
+
 ## Commands
 
 Run them from the project root.

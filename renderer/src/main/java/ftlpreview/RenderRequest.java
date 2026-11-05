@@ -4,7 +4,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * One render: the Theme, the Page, the Story's URL (for the locale switcher links), the locale and the merged
+ * One render: the Theme chain, the Page, the Story's URL (for the locale switcher links), the locale and the merged
  * Mock model.
  *
  * @param strict false to skip failing template parts (e.g. missing Mock model keys) instead of failing the
