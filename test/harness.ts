@@ -4,6 +4,9 @@ import os from "node:os";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
+/** Domain values tests build URLs from, re-exported so tests reach src/ only through the harness. */
+export { DEFAULT_STORY, storyUrl } from "../src/stories.ts";
+
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 /** The ftl-preview command, as installed. */
 export const bin = path.join(repoRoot, "bin", "ftl-preview.js");

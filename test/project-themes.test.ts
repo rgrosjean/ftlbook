@@ -2,8 +2,7 @@ import { test, before, after, describe } from "node:test";
 import assert from "node:assert/strict";
 import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { copyProject, runCli, startServer, fixture, type RunningServer } from "./harness.ts";
-import { DEFAULT_STORY, storyUrl } from "../src/stories.ts";
+import { copyProject, runCli, startServer, fixture, DEFAULT_STORY, storyUrl, type RunningServer } from "./harness.ts";
 
 /** The Default Story of the Page every test here renders. */
 const LOGIN_STORY_URL = storyUrl("login", "login.ftl", DEFAULT_STORY);
