@@ -1,5 +1,5 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -22,6 +22,16 @@ type TestContext = { after: (fn: () => Promise<void>) => void };
 export async function tempDir(t: TestContext, prefix: string): Promise<string> {
   const dir = await mkdtemp(path.join(os.tmpdir(), `ftl-preview-${prefix}-`));
   t.after(() => rm(dir, { recursive: true, force: true }));
+  return dir;
+}
+
+/** A directory to use as PATH, holding only the given executables (shell scripts), removed after the test. */
+export async function pathWith(t: TestContext, scripts: Record<string, string>): Promise<string> {
+  const dir = await tempDir(t, "path");
+  for (const [name, body] of Object.entries(scripts)) {
+    await writeFile(path.join(dir, name), `#!/bin/sh\n${body}\n`);
+    await chmod(path.join(dir, name), 0o755);
+  }
   return dir;
 }
 

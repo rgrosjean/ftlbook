@@ -1,4 +1,4 @@
-import { REQUIRED_JAVA_MAJOR, spawnRenderer } from "./java.ts";
+import { launchRenderer } from "./java.ts";
 import { errorMessage } from "./errors.ts";
 
 /** What the Renderer needs of the Theme chain. */
@@ -78,7 +78,7 @@ export async function startRenderer(): Promise<RendererProcess> {
         return failure(`The Renderer stopped and could not be restarted: ${errorMessage(err)}. Restart ftl-preview serve.`);
       }
       try {
-        const res = await fetch(renderer.endpoint, {
+        const res = await fetch(`http://127.0.0.1:${renderer.port}/render`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(request),
@@ -103,36 +103,9 @@ export async function startRenderer(): Promise<RendererProcess> {
     },
   };
 
-  /** Spawns a Renderer and waits for its LISTENING line. */
-  async function launch() {
-    // stdin stays open: the Renderer exits when it closes, so it never outlives the CLI
-    const child = await spawnRenderer();
-    const port = await new Promise<number>((resolve, reject) => {
-      let out = "";
-      child.once("error", (err) =>
-        reject(new Error(`Could not start Java (${err.message}). A JDK ${REQUIRED_JAVA_MAJOR} or newer must be on the PATH.`)),
-      );
-      child.once("exit", (code) => reject(new Error(`Renderer exited early with code ${code}`)));
-      const onData = (chunk: Buffer) => {
-        out += chunk;
-        const match = out.match(/LISTENING (\d+)/);
-        if (match) {
-          child.stdout.off("data", onData);
-          child.stdout.resume();
-          resolve(Number(match[1]));
-        }
-      };
-      child.stdout.on("data", onData);
-    });
-    child.once("exit", (code, signal) => {
-      if (!stopped) console.error(`Renderer stopped unexpectedly (code ${code}, signal ${signal}); the next render restarts it.`);
-    });
-    return {
-      endpoint: `http://127.0.0.1:${port}/render`,
-      running: () => child.exitCode === null && child.signalCode === null,
-      stop() {
-        if (this.running()) child.kill("SIGTERM");
-      },
-    };
+  function launch() {
+    return launchRenderer((code, signal) =>
+      console.error(`Renderer stopped unexpectedly (code ${code}, signal ${signal}); the next render restarts it.`),
+    );
   }
 }

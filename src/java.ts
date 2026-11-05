@@ -1,6 +1,5 @@
-import { execFile, spawn, type ChildProcessByStdio } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import type { Readable, Writable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import path from "node:path";
@@ -9,7 +8,7 @@ import { errorMessage } from "./errors.ts";
 const execFileAsync = promisify(execFile);
 
 /** The Renderer jar targets Java 21 (renderer/pom.xml maven.compiler.release). */
-export const REQUIRED_JAVA_MAJOR = 21;
+const REQUIRED_JAVA_MAJOR = 21;
 
 /** Built by `npm run build:renderer`; also holds the Base theme jar extractor. */
 const RENDERER_JAR = path.resolve(
@@ -41,13 +40,57 @@ export async function extractJar(jar: string, targetDir: string): Promise<void> 
   }
 }
 
+/** A started Renderer JVM, listening on `port` of the loopback interface. */
+export interface LaunchedRenderer {
+  readonly port: number;
+  /** False once the process has exited, for whatever reason. */
+  running(): boolean;
+  stop(): void;
+}
+
 /**
- * Spawns the Renderer JVM with stdin and stdout piped and stderr inherited. It listens on a free
- * port, prints `LISTENING <port>` and exits when its stdin closes.
+ * Starts the Renderer JVM (ADR 0001) and resolves once it prints `LISTENING <port>`. It listens on a free port,
+ * keeps stderr on ours and exits when its stdin closes, so it never outlives the CLI.
+ *
+ * @param onUnexpectedExit called when the process exits after starting without `stop()` being called
  */
-export async function spawnRenderer(): Promise<ChildProcessByStdio<Writable, Readable, null>> {
+export async function launchRenderer(
+  onUnexpectedExit: (code: number | null, signal: NodeJS.Signals | null) => void,
+): Promise<LaunchedRenderer> {
   await requireJava();
-  return spawn("java", ["-jar", rendererJar(), "0"], { stdio: ["pipe", "pipe", "inherit"] });
+  // stdin stays open: the Renderer exits when it closes
+  const child = spawn("java", ["-jar", rendererJar(), "0"], { stdio: ["pipe", "pipe", "inherit"] });
+  const port = await new Promise<number>((resolve, reject) => {
+    let out = "";
+    child.once("error", (err) =>
+      reject(new Error(`Could not start Java (${err.message}). A JDK ${REQUIRED_JAVA_MAJOR} or newer must be on the PATH.`)),
+    );
+    child.once("exit", (code) => reject(new Error(`Renderer exited early with code ${code}`)));
+    const onData = (chunk: Buffer) => {
+      out += chunk;
+      const match = out.match(/LISTENING (\d+)/);
+      if (match) {
+        child.stdout.off("data", onData);
+        child.stdout.resume();
+        resolve(Number(match[1]));
+      }
+    };
+    child.stdout.on("data", onData);
+  });
+
+  let stopping = false;
+  child.once("exit", (code, signal) => {
+    if (!stopping) onUnexpectedExit(code, signal);
+  });
+  const running = () => child.exitCode === null && child.signalCode === null;
+  return {
+    port,
+    running,
+    stop() {
+      stopping = true;
+      if (running()) child.kill("SIGTERM");
+    },
+  };
 }
 
 function rendererJar(): string {

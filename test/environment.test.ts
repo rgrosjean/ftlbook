@@ -1,22 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmod, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { readdir } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { existsSync } from "node:fs";
-import { startServer, runCli, copyProject, fixture, bin } from "./harness.ts";
-
-/** A directory to use as PATH, holding only the given executables (shell scripts). */
-async function pathWith(t: { after: (fn: () => Promise<void>) => void }, scripts: Record<string, string>) {
-  const dir = await mkdtemp(path.join(os.tmpdir(), "ftl-preview-path-"));
-  t.after(() => rm(dir, { recursive: true, force: true }));
-  for (const [name, body] of Object.entries(scripts)) {
-    await writeFile(path.join(dir, name), `#!/bin/sh\n${body}\n`);
-    await chmod(path.join(dir, name), 0o755);
-  }
-  return dir;
-}
+import { startServer, runCli, copyProject, fixture, bin, pathWith } from "./harness.ts";
 
 test("without Java on the PATH, serve fails naming the JDK requirement", async (t) => {
   const emptyPath = await pathWith(t, {});
